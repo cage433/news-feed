@@ -42,16 +42,16 @@ const items = [...html.matchAll(/<li class="item" data-section="([^"]+)" data-so
 const sectionChips = [...html.matchAll(/<button class="chip(?: is-active)?" data-filter="([^"]+)"/g)]
   .map(([, filter]) => new El("button", { filter }, ["chip"]));
 
-const sourceChips = [...html.matchAll(/<button class="chip src is-active" data-source="([^"]+)" data-section="([^"]+)"/g)]
+const sourceChips = [...html.matchAll(/<button class="chip src" data-source="([^"]+)" data-section="([^"]+)"/g)]
   .map(([, source, section]) => new El("button", { source, section }, ["chip", "src"]));
 
 const times = [...html.matchAll(/<time datetime="([^"]+)"(\s+data-undated="1")?/g)]
   .map(([, datetime, undated]) => new El("time", undated ? { datetime, undated: "1" } : { datetime }));
 
-const toggleAll = new El("button", {}, ["chip", "link"]);
+const clearBtn = new El("button", {}, ["chip", "link"]);
 const shown = new El("span", {});
 const sectionsNav = new El("nav", {}); sectionsNav._children = sectionChips;
-const sourcesNav = new El("nav", {}); sourcesNav._children = [...sourceChips, toggleAll];
+const sourcesNav = new El("nav", {}); sourcesNav._children = [...sourceChips, clearBtn];
 const list = new El("ul", {});
 
 const store = {};
@@ -65,7 +65,7 @@ Object.defineProperty(globalThis, "localStorage", {
   },
 });
 globalThis.document = {
-  getElementById: (id) => ({ list, "toggle-all": toggleAll, shown, sections: sectionsNav, sources: sourcesNav }[id]),
+  getElementById: (id) => ({ list, clear: clearBtn, shown, sections: sectionsNav, sources: sourcesNav }[id]),
   querySelectorAll: (sel) => {
     if (sel === "time[datetime]") return times;
     if (sel === "#sections .chip") return sectionChips;
@@ -87,47 +87,75 @@ console.log(`loaded ${TOTAL} items, ${sectionChips.length} section chips, ${sour
 
 check("initial: everything visible", visible(), TOTAL);
 check("initial: count element", Number(shown.textContent), TOTAL);
+check("initial: 'all' button hidden", clearBtn.hidden, true);
 
-// --- muting a single source
-const noisiest = sourceChips[0];
-noisiest.click();
-check("mute one source hides exactly its items", visible(), TOTAL - bySource(noisiest.dataset.source));
-check("muted chip loses is-active", noisiest.classList.contains("is-active"), false);
-noisiest.click();
-check("unmute restores", visible(), TOTAL);
+// --- click focuses, clicking again reverts
+const a = sourceChips[0];
+a.click();
+check("click shows only that source", visible(), bySource(a.dataset.source));
+check("focused chip marked", a.classList.contains("is-focus"), true);
+check("others dimmed, not struck through",
+  sourceChips.slice(1).every((c) => c.classList.contains("is-dimmed")
+    && !c.classList.contains("is-excluded")), true);
+check("'all' button appears once filtered", clearBtn.hidden, false);
+a.click();
+check("clicking again removes focus", visible(), TOTAL);
+check("focus class cleared", a.classList.contains("is-focus"), false);
 
-// --- shift-click isolates
-const target = sourceChips[3];
-target.click(true);
-check("shift-click isolates one source", visible(), bySource(target.dataset.source));
-check("isolated chip stays active", target.classList.contains("is-active"), true);
+// --- moving focus between sources
+const b = sourceChips[1];
+a.click(); b.click();
+check("focusing another source replaces the first", visible(), bySource(b.dataset.source));
+check("previous focus released", a.classList.contains("is-focus"), false);
+b.click();
+check("cleared back to everything", visible(), TOTAL);
 
-// --- none / all
-toggleAll.click();
-check("'none' hides everything", visible(), 0);
-toggleAll.click();
-check("'all' restores everything", visible(), TOTAL);
+// --- shift-click excludes, shift-clicking again reverts
+a.click(true);
+check("shift-click hides that source", visible(), TOTAL - bySource(a.dataset.source));
+check("excluded chip marked", a.classList.contains("is-excluded"), true);
+b.click(true);
+check("exclusions accumulate", visible(), TOTAL - bySource(a.dataset.source) - bySource(b.dataset.source));
+a.click(true);
+check("shift-clicking again re-includes", visible(), TOTAL - bySource(b.dataset.source));
+b.click(true);
+check("all exclusions reverted", visible(), TOTAL);
 
-// --- section filter combines with source mute
+// --- focus wins over exclusion, and can't strand an empty page
+a.click(true);
+a.click();
+check("focusing an excluded source shows it", visible(), bySource(a.dataset.source));
+a.click(true);
+check("shift-click on the focused source drops focus and excludes it",
+  visible(), TOTAL - bySource(a.dataset.source));
+a.click(true);
+
+// --- 'all' clears everything, section included
 const sec = sectionChips.find((c) => c.dataset.filter !== "all");
-sec.click();
 const secName = sec.dataset.filter;
+sec.click();
 check("section filter narrows to that section", visible(), bySection(secName));
 check("irrelevant source chips hidden",
   sourceChips.filter((c) => !c.hidden).every((c) => c.dataset.section === secName), true);
 
 const inSection = sourceChips.find((c) => !c.hidden);
-inSection.click();
-check("mute inside a section subtracts only that source",
+inSection.click(true);
+check("exclude inside a section subtracts only that source",
   visible(), bySection(secName) - bySource(inSection.dataset.source));
 
-sectionChips.find((c) => c.dataset.filter === "all").click();
-check("back to All keeps the source muted", visible(), TOTAL - bySource(inSection.dataset.source));
+clearBtn.click();
+check("'all' clears source and section filters", visible(), TOTAL);
+check("'all' hides itself again", clearBtn.hidden, true);
 
 // --- persistence
+a.click();
 const saved = JSON.parse(store["newsfeed-filters"]);
-check("state persisted to localStorage", saved.muted.includes(inSection.dataset.source), true);
+check("focus persisted", saved.focus, a.dataset.source);
 check("section persisted", saved.section, "all");
+a.click(true);
+check("exclusion persisted",
+  JSON.parse(store["newsfeed-filters"]).excluded, [a.dataset.source]);
+clearBtn.click();
 
 // --- undated rendering
 const undated = times.filter((t) => t.dataset.undated);

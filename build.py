@@ -258,7 +258,7 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
     ranked = sorted(counts, key=lambda s: (-counts[s], s.lower()))
 
     source_chips = [
-        f'<button class="chip src is-active" data-source="{e(slug(name))}" '
+        f'<button class="chip src" data-source="{e(slug(name))}" '
         f'data-section="{e(slug(source_section[name]))}">'
         f'{e(name)}<span class="count">{counts[name]}</span></button>'
         for name in ranked
@@ -321,13 +321,16 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
   }}
   .chip:hover {{ border-color: var(--line); }}
   .chip.is-active {{ background: var(--accent); color: #fff; }}
-  /* Source toggles read as on/off, so they invert: muted ones go faint
-     rather than the selected one going solid. */
+  /* Three states: focused (solid), excluded (struck through), and dimmed —
+     the last for sources merely not focused, so a focus reads as one bright
+     chip rather than eight rejected ones. */
   .sources {{ margin-top: -.9rem; gap: .35rem; }}
   .chip.src {{ font-size: .78rem; padding: .25rem .6rem; }}
-  .chip.src.is-active {{ background: var(--chip); color: var(--ink); }}
-  .chip.src:not(.is-active) {{ opacity: .4; text-decoration: line-through; }}
-  .chip.src[hidden] {{ display: none; }}
+  .chip.src.is-focus {{ background: var(--accent); color: #fff; }}
+  .chip.src.is-focus .count {{ opacity: .75; }}
+  .chip.src.is-excluded {{ opacity: .38; text-decoration: line-through; }}
+  .chip.src.is-dimmed {{ opacity: .45; }}
+  .chip.src[hidden], .chip.link[hidden] {{ display: none; }}
   .count {{ opacity: .55; margin-left: .35rem; font-variant-numeric: tabular-nums; }}
   .chip.link {{
     background: none; color: var(--muted); text-decoration: underline;
@@ -368,7 +371,7 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
 
   <nav class="filters sources" id="sources">
     {"".join(source_chips)}
-    <button class="chip link" id="toggle-all">none</button>
+    <button class="chip link" id="clear" hidden>all</button>
   </nav>
 
   <ul id="list">
@@ -376,8 +379,9 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
   </ul>
 
   <footer>
-    <p>Click a source to mute it, shift-click to show only that one. Choices are
-       remembered in this browser. Edit <code>feeds.txt</code> to change sources.</p>
+    <p>Click a source to show only that one, shift-click to hide it; repeat to
+       undo. Choices are remembered in this browser. Edit <code>feeds.txt</code>
+       to change sources.</p>
     {problems}
   </footer>
 </div>
@@ -406,18 +410,22 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
   const items = [...list.querySelectorAll(".item")];
   const sourceChips = [...document.querySelectorAll(".chip.src")];
   const countEl = document.getElementById("shown");
-  const toggleAll = document.getElementById("toggle-all");
+  const clearBtn = document.getElementById("clear");
 
-  // Filters survive a rebuild, so muting a source sticks across the day.
+  // Two independent source filters: `focus` narrows to a single source,
+  // `excluded` hides several. Focus wins while it's set — combining them
+  // would let you focus a source and exclude it at the same time.
   const saved = JSON.parse(localStorage.getItem("newsfeed-filters") || "{{}}");
   let section = saved.section || "all";
-  const muted = new Set(saved.muted || []);
+  let focus = saved.focus || null;
+  const excluded = new Set(saved.excluded || []);
 
   function apply() {{
     let shown = 0;
     for (const item of items) {{
+      const src = item.dataset.source;
       const ok = (section === "all" || item.dataset.section === section)
-                 && !muted.has(item.dataset.source);
+                 && (focus ? src === focus : !excluded.has(src));
       item.hidden = !ok;
       if (ok) shown++;
     }}
@@ -426,16 +434,19 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
       c.classList.toggle("is-active", c.dataset.filter === section);
     }}
     for (const c of sourceChips) {{
-      c.classList.toggle("is-active", !muted.has(c.dataset.source));
-      // Hide source toggles that can't apply under the current section.
+      const src = c.dataset.source;
+      c.classList.toggle("is-focus", focus === src);
+      c.classList.toggle("is-excluded", !focus && excluded.has(src));
+      c.classList.toggle("is-dimmed", Boolean(focus) && focus !== src);
+      // Hide source chips that can't apply under the current section.
       c.hidden = section !== "all" && c.dataset.section !== section;
     }}
 
-    const live = sourceChips.filter((c) => !c.hidden);
-    toggleAll.textContent = live.every((c) => muted.has(c.dataset.source)) ? "all" : "none";
+    // Only offer "all" when there's actually something to clear.
+    clearBtn.hidden = section === "all" && !focus && excluded.size === 0;
     countEl.textContent = shown;
     localStorage.setItem("newsfeed-filters",
-      JSON.stringify({{ section, muted: [...muted] }}));
+      JSON.stringify({{ section, focus, excluded: [...excluded] }}));
   }}
 
   document.getElementById("sections").addEventListener("click", (ev) => {{
@@ -449,23 +460,23 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
     const chip = ev.target.closest(".chip");
     if (!chip) return;
 
-    if (chip === toggleAll) {{
-      const live = sourceChips.filter((c) => !c.hidden);
-      const turnOff = !live.every((c) => muted.has(c.dataset.source));
-      for (const c of live) {{
-        if (turnOff) muted.add(c.dataset.source);
-        else muted.delete(c.dataset.source);
-      }}
+    if (chip === clearBtn) {{
+      section = "all";
+      focus = null;
+      excluded.clear();
     }} else if (chip.dataset.source) {{
-      // Plain click toggles one source; shift-click isolates it.
       const src = chip.dataset.source;
       if (ev.shiftKey) {{
-        muted.clear();
-        for (const c of sourceChips) if (c.dataset.source !== src) muted.add(c.dataset.source);
-      }} else if (muted.has(src)) {{
-        muted.delete(src);
+        // Exclude, and drop any focus — otherwise excluding the focused
+        // source would leave an empty page with no obvious way back.
+        focus = null;
+        if (excluded.has(src)) excluded.delete(src);
+        else excluded.add(src);
       }} else {{
-        muted.add(src);
+        // Focusing is a fresh start: drop exclusions too, so no invisible
+        // state survives behind the focused view and surprises you later.
+        focus = focus === src ? null : src;
+        excluded.clear();
       }}
     }}
     apply();
