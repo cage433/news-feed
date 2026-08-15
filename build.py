@@ -127,8 +127,14 @@ def entry_time(entry) -> datetime | None:
     return None
 
 
-def fetch(feed: Feed) -> tuple[Feed, list[Item], str | None]:
-    """Return (feed, items, error). A broken feed must not fail the build."""
+def fetch(feed: Feed) -> tuple[Feed, list[Item], str | None, str | None]:
+    """Return (feed, items, error, quiet).
+
+    `error` is a real failure and is reported on the page. `quiet` means the
+    feed is healthy but has published nothing inside its window — normal for
+    an occasional essayist, so it goes to the log only. A broken feed must
+    not fail the build either way.
+    """
     parsed = None
     problem = "unknown error"
 
@@ -150,13 +156,13 @@ def fetch(feed: Feed) -> tuple[Feed, list[Item], str | None]:
             problem = f"HTTP {status}"      # transient — worth another go
             continue
         if status and status >= 400:
-            return feed, [], f"HTTP {status}"   # 404/403 won't fix itself
+            return feed, [], f"HTTP {status}", None   # 404/403 won't fix itself
         if not parsed.entries:
             reason = getattr(parsed, "bozo_exception", None)
-            return feed, [], f"no entries ({reason})" if reason else "no entries"
+            return feed, [], (f"no entries ({reason})" if reason else "no entries"), None
         break
     else:
-        return feed, [], problem
+        return feed, [], problem, None
 
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(days=feed.max_age_days)
@@ -186,10 +192,11 @@ def fetch(feed: Feed) -> tuple[Feed, list[Item], str | None]:
                           dated=when is not None))
 
     if not items and newest is not None:
-        # The feed parsed and has entries, they're just all stale. Worth
-        # surfacing — it usually means the publisher abandoned the feed.
-        return feed, [], f"nothing newer than {newest:%d %b %Y}"
-    return feed, items, None
+        # Parsed fine, entries present, just none inside the window. Common
+        # for an essayist who posts every few months — log it, don't put it
+        # on the page as though something were broken.
+        return feed, [], None, f"nothing newer than {newest:%d %b %Y}"
+    return feed, items, None, None
 
 
 def load_state() -> dict[str, str]:
@@ -223,10 +230,13 @@ def collect(feeds: list[Feed]) -> tuple[list[Item], list[tuple[str, str]]]:
     errors: list[tuple[str, str]] = []
     seen: set[str] = set()
 
-    for feed, feed_items, error in results:
+    for feed, feed_items, error, quiet in results:
         if error:
             errors.append((feed.name, error))
             print(f"  ! {feed.name}: {error}", file=sys.stderr)
+            continue
+        if quiet:
+            print(f"  · {feed.name}: {quiet} (last {feed.max_age_days}d)", file=sys.stderr)
             continue
 
         kept = 0

@@ -94,6 +94,11 @@ appears when something has gone wrong, so a normal run ends cleanly at the last
 story. The build exits non-zero only if *every* feed fails, which prevents a
 network blip from replacing a good page with an empty one.
 
+A feed that is simply *quiet* — healthy, but with nothing published inside its
+window — is not a failure and stays off the page. Several of the Substacks post
+only every few months, and reporting them on every run would make the footer
+permanent noise. Those appear in the build log instead.
+
 ## Notes on specific sources
 
 - **CEPR** — removed. Their `/feed/` is abandoned: the newest entry is the
@@ -105,6 +110,12 @@ network blip from replacing a good page with an empty one.
   link (shown as "first seen …") and `state.json` remembers that between runs,
   cached by the workflow. Without it, Weekly Worker would pin itself to the top
   of the page on every build.
+- **Craig Murray** — behind a Cloudflare bot challenge (`cf-mitigated:
+  challenge`) across the whole site, not just the feed, so an automated build
+  can't fetch it. GitHub Actions runs from datacenter IPs, which Cloudflare
+  challenges most aggressively. Commented out in `feeds.txt`.
+- **Jason Hickel** — last posted January 2026. Configured and working; he'll
+  simply appear when he publishes again.
 - **NACLA** — publishes no feed. Every feed path (`/feed`, `/feed/`,
   `/?feed=rss2`, `/category/news-analysis/feed`) redirects to the homepage. It's
   commented out in `feeds.txt` in case they restore it.

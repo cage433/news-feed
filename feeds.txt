@@ -28,6 +28,23 @@ Venezuelanalysis      | https://venezuelanalysis.com/feed/       | 14
 # file: it contains an auth token and this repo is public.
 Where's Your Ed At    | https://www.wheresyoured.at/rss/          | 14
 
+# Substacks and individual blogs. These are essayists rather than news
+# wires — several post only every few weeks, so at 14 days they'd show
+# nothing at all. 30 gives them room without dragging in stale articles.
+Asa Winstanley        | https://asawinstanley.substack.com/feed  | 30
+Gabriel Rockhill      | https://gabrielrockhill.substack.com/feed | 30
+Aaron Maté            | https://www.aaronmate.net/feed           | 30
+Jason Hickel          | https://jasonhickel.substack.com/feed    | 30
+Norman Finkelstein    | https://normanfinkelstein.substack.com/feed | 30
+Vijay Prashad         | https://luciddialectics.substack.com/feed | 30
+Critique of Crisis Theory | https://critiqueofcrisistheory.com/feed/ | 30
+
 # NACLA publishes no feed — every feed URL redirects to their homepage.
 # Left here in case they restore it.
 # NACLA               | https://nacla.org/feed/                  | 14
+
+# Craig Murray sits behind a Cloudflare bot challenge (cf-mitigated:
+# challenge) across the whole site, feed included, so an automated build
+# can't fetch it — and GitHub Actions' datacenter IPs get challenged
+# hardest. Nothing to fix here short of circumventing the block.
+# Craig Murray        | https://www.craigmurray.org.uk/feed/     | 30
