@@ -389,7 +389,15 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
   /* Visible feedback while a long press is arming, so a hold that hasn't
      registered yet is distinguishable from one that has. */
   .chip.src.is-pressing {{ transform: scale(.92); opacity: .7; }}
-  .chip.src {{ transition: transform .12s ease, opacity .12s ease; }}
+  .chip.src {{
+    transition: transform .12s ease, opacity .12s ease;
+    /* Not `manipulation`: that leaves the browser free to reinterpret the
+       touch as a page scroll, and Android fires pointercancel the moment it
+       starts considering that — killing the long press every time. `none`
+       claims touches on a chip outright. The row is a thin strip, so
+       scrolling elsewhere is unaffected. */
+    touch-action: none;
+  }}
   .chip.src[hidden], .chip.link[hidden] {{ display: none; }}
   .view {{ margin-top: -.9rem; }}
   #unread-only.is-active {{ background: var(--accent); color: #fff; }}
@@ -633,6 +641,12 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
     pressY = ev.clientY || 0;
     chip.classList.toggle("is-pressing", true);
 
+    // Keep receiving events for this pointer even if the finger drifts off
+    // the chip, and stop the browser retargeting them elsewhere.
+    if (chip.setPointerCapture && ev.pointerId !== undefined) {{
+      try {{ chip.setPointerCapture(ev.pointerId); }} catch (e) {{ /* not fatal */ }}
+    }}
+
     pressTimer = setTimeout(() => {{
       pressTimer = null;
       longPressed = true;          // tells the click handler to stand down
@@ -652,7 +666,9 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
     if (Math.hypot(dx, dy) > MOVE_TOLERANCE) cancelPress();
   }});
 
-  for (const evt of ["pointerup", "pointercancel", "pointerleave"]) {{
+  // Deliberately not pointerleave: setting pointer capture can itself fire
+  // leave events on the old target chain, which would cancel instantly.
+  for (const evt of ["pointerup", "pointercancel"]) {{
     sourcesNav.addEventListener(evt, cancelPress);
   }}
 
@@ -660,6 +676,33 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
   sourcesNav.addEventListener("contextmenu", (ev) => {{
     if (ev.target.closest(".chip.src")) ev.preventDefault();
   }});
+
+  // Load the page with #debug to see which pointer events actually fire on a
+  // phone. Touch behaviour can't be reproduced in the test harness, so this
+  // is the only way to diagnose it without guessing.
+  if (typeof location !== "undefined" && location.hash.indexOf("debug") !== -1) {{
+    const panel = document.createElement("div");
+    panel.style.cssText = "position:fixed;bottom:0;left:0;right:0;max-height:45vh;"
+      + "overflow:auto;background:#000;color:#4f4;font:11px/1.4 monospace;"
+      + "padding:.5rem;z-index:9999;white-space:pre-wrap";
+    document.body.appendChild(panel);
+
+    let n = 0;
+    const t0 = Date.now();
+    const say = (m) => {{
+      panel.textContent = (++n) + " +" + (Date.now() - t0) + "ms  " + m
+        + "\\n" + panel.textContent.slice(0, 3000);
+    }};
+    say("debug on — press and hold a source chip");
+
+    for (const t of ["pointerdown", "pointerup", "pointercancel", "pointerleave",
+                     "contextmenu", "click", "touchstart", "touchend", "touchcancel"]) {{
+      sourcesNav.addEventListener(t, (ev) => {{
+        const c = ev.target && ev.target.className ? String(ev.target.className) : "-";
+        say(t + "  pointerType=" + (ev.pointerType || "-") + "  target=" + c);
+      }}, true);
+    }}
+  }}
 
   // Opening a story marks it read; the ✓ button toggles without opening.
   list.addEventListener("click", (ev) => {{
