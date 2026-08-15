@@ -45,9 +45,14 @@ loads instantly.
 ## Read state
 
 Opening a story marks it read; the ✓ button on each row toggles it without
-opening. Read stories fade but stay in place — the "unread only" button hides
-them, and "mark all read" clears whatever is currently visible, so it respects
-the source filter.
+opening. Read stories fade but stay in place.
+
+Under "unread only" that still holds for anything read *during this session* —
+the list would otherwise reshuffle under the cursor as you worked down it.
+Stories read in an earlier session are hidden, so the queue is clean on the next
+load. "Mark all read" is the exception: it clears the visible list immediately,
+since emptying the queue is the point of it. It also respects the source filter,
+so you can focus one source and clear only that.
 
 This lives in the browser's `localStorage`, keyed by canonical link. There is no
 account and no server, so **read state does not follow you between devices or

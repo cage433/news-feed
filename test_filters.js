@@ -85,6 +85,12 @@ globalThis.document = {
 };
 list.querySelectorAll = () => items;
 
+// One story already read in an earlier session. It must behave differently
+// from one marked read during this session: only the latter stays on screen
+// under "unread only".
+const PRESEEDED = items[5];
+store["newsfeed-read"] = JSON.stringify({ [PRESEEDED.dataset.id]: Date.now() });
+
 // Execute the real page script.
 new Function(script)();
 
@@ -160,14 +166,15 @@ clearBtn.click();
 const unread = () => Number(unreadCount.textContent);
 const fire = (el) => { for (const fn of list._handlers) fn({ target: el }); };
 
-check("everything starts unread", unread(), TOTAL);
-check("nothing marked read", items.some((i) => i.classList.contains("is-read")), false);
+check("preseeded story loads as read", PRESEEDED.classList.contains("is-read"), true);
+check("unread count excludes it", unread(), TOTAL - 1);
+check("read story still shown when not filtering", PRESEEDED.hidden, false);
 
 // opening a story marks it read, but leaves it on the page
 const story = items[0];
 fire(story._headline);
 check("opening marks read", story.classList.contains("is-read"), true);
-check("unread count drops", unread(), TOTAL - 1);
+check("unread count drops", unread(), TOTAL - 2);
 check("read story still visible", story.hidden, false);
 check("shown count unchanged", Number(shown.textContent), TOTAL);
 
@@ -178,30 +185,48 @@ check("tick marks read", other.classList.contains("is-read"), true);
 check("tick updates its own title", other._mark.title, "Mark as unread");
 fire(other._mark);
 check("tick marks unread again", other.classList.contains("is-read"), false);
-check("unread count restored", unread(), TOTAL - 1);
+check("unread count restored", unread(), TOTAL - 2);
 
-// unread-only hides read stories
+// unread-only hides stories read earlier, but keeps this session's in place
 unreadBtn.fire();
-check("unread only hides read stories", visible(), TOTAL - 1);
 check("unread toggle marked active", unreadBtn.classList.contains("is-active"), true);
-check("unread count ignores the toggle", unread(), TOTAL - 1);
+check("story read this session stays visible", story.hidden, false);
+check("story read earlier is hidden", PRESEEDED.hidden, true);
+check("only the earlier read story is hidden", visible(), TOTAL - 1);
+check("unread count ignores the toggle", unread(), TOTAL - 2);
+
+// un-marking something read this session keeps it visible too
+fire(story._mark);
+check("un-marking restores unread count", unread(), TOTAL - 1);
+check("still visible after un-marking", story.hidden, false);
+fire(story._mark);
+
+// mark all read empties the view, unlike a single mark
+markAllBtn.fire();
+check("mark all read clears the visible list", visible(), 0);
+check("mark all read zeroes the unread count", unread(), 0);
+check("mark-all button hides when nothing is unread", markAllBtn.hidden, true);
 unreadBtn.fire();
-check("turning it off restores", visible(), TOTAL);
+check("everything reappears with the toggle off", visible(), TOTAL);
 
 // read state is independent of the source filter
+for (const i of items) fire(i._mark);              // un-read everything
+check("reset to all unread", unread(), TOTAL);
 a.click();
 check("focus still works with read state", visible(), bySource(a.dataset.source));
 markAllBtn.fire();
 check("mark all read only affects visible", unread(), 0);
 a.click();
 check("stories outside the focus stayed unread",
-  unread(), TOTAL - bySource(a.dataset.source) - 1);
+  unread(), TOTAL - bySource(a.dataset.source));
 
-// persistence and pruning
+// persistence and pruning. The reset loop above left `story` unread, so mark
+// something that is definitely read: one of the focused source's own items.
+const inFocus = items.find((i) => i.dataset.source === a.dataset.source);
 const readIds = Object.keys(JSON.parse(store["newsfeed-read"]));
-check("read state persisted separately", readIds.includes(story.dataset.id), true);
+check("read state persisted separately", readIds.includes(inFocus.dataset.id), true);
 check("read state survives clearing filters",
-  (clearBtn.click(), story.classList.contains("is-read")), true);
+  (clearBtn.click(), inFocus.classList.contains("is-read")), true);
 check("unread-only persisted in filters",
   "unreadOnly" in JSON.parse(store["newsfeed-filters"]), true);
 check("read ids are canonical links", readIds.every((id) => id.startsWith("http")), true);

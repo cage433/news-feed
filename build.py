@@ -299,7 +299,10 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
     problems = ""
     if errors:
         listed = ", ".join(f"{e(name)} ({e(msg)})" for name, msg in errors)
-        problems = f'<p class="problems">Unavailable this run: {listed}</p>'
+        problems = (
+            '<footer><p class="problems">Unavailable this run: '
+            f'{listed}</p></footer>'
+        )
 
     return f"""<!doctype html>
 <html lang="en">
@@ -410,14 +413,7 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
     {"".join(rows) or '<li class="empty">No stories found. Check the build log.</li>'}
   </ul>
 
-  <footer>
-    <p>Click a source to show only that one, shift-click to hide it; repeat to
-       undo. Opening a story marks it read, or use ✓ to mark it without opening.
-       Filters and read state are remembered in this browser only, so they don't
-       follow you to another device. Edit <code>feeds.txt</code> to change
-       sources.</p>
-    {problems}
-  </footer>
+  {problems}
 </div>
 
 <script>
@@ -473,9 +469,20 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
     localStorage.setItem("newsfeed-read", JSON.stringify(Object.fromEntries(read)));
   }}
 
+  // Stories marked read in this session stay on screen even under "unread
+  // only", so the list doesn't reshuffle under the cursor as you work down
+  // it. Not persisted: they're gone on the next load, which is the point.
+  const justRead = new Set();
+
   function setRead(item, value) {{
-    if (value) read.set(item.dataset.id, Date.now());
-    else read.delete(item.dataset.id);
+    const id = item.dataset.id;
+    if (value) {{
+      read.set(id, Date.now());
+      justRead.add(id);
+    }} else {{
+      read.delete(id);
+      justRead.delete(id);
+    }}
     saveRead();
   }}
 
@@ -487,7 +494,8 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
       const src = item.dataset.source;
       const isRead = read.has(item.dataset.id);
       const passesSource = focus ? src === focus : !excluded.has(src);
-      const ok = passesSource && (!unreadOnly || !isRead);
+      const ok = passesSource
+                 && (!unreadOnly || !isRead || justRead.has(item.dataset.id));
 
       item.hidden = !ok;
       item.classList.toggle("is-read", isRead);
@@ -562,8 +570,10 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
 
   markAllBtn.addEventListener("click", () => {{
     // Only what's currently visible, so it respects the source filter and
-    // can't silently bury stories you've filtered out of sight.
+    // can't silently bury stories you've filtered out of sight. Unlike a
+    // single mark, this clears the view — emptying the queue is the point.
     for (const item of items) if (!item.hidden) read.set(item.dataset.id, Date.now());
+    justRead.clear();
     saveRead();
     apply();
   }});
