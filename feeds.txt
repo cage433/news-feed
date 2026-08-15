@@ -23,6 +23,12 @@ CEPR                  | https://cepr.net/feed/                   | 14
 Electronic Intifada   | https://electronicintifada.net/rss.xml   | 14
 Venezuelanalysis      | https://venezuelanalysis.com/feed/       | 14
 
+# Ghost site. The public feed already lists the Premium posts with real
+# excerpts, so no subscriber token is needed here — clicking through is
+# what uses your subscription. Never put a members/signin URL in this
+# file: it contains an auth token and this repo is public.
+Where's Your Ed At    | https://www.wheresyoured.at/rss/          | 14
+
 # NACLA publishes no feed — every feed URL redirects to their homepage.
 # Left here in case they restore it.
 # NACLA               | https://nacla.org/feed/                  | 14
