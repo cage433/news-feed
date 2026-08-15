@@ -42,6 +42,24 @@ de-duplicates by link, and writes `out/index.html`. That file is
 self-contained — no external CSS, fonts, or scripts — so it works offline and
 loads instantly.
 
+## Read state
+
+Opening a story marks it read; the ✓ button on each row toggles it without
+opening. Read stories fade but stay in place — the "unread only" button hides
+them, and "mark all read" clears whatever is currently visible, so it respects
+the source filter.
+
+This lives in the browser's `localStorage`, keyed by canonical link. There is no
+account and no server, so **read state does not follow you between devices or
+browsers** — your laptop and phone keep separate tallies. Making it shared would
+mean a backend, which this deliberately doesn't have.
+
+Entries expire after 180 days rather than being pruned to whatever is on the
+page. That distinction matters: feeds fail transiently (Venezuelanalysis
+returned an HTTP 520 during development), and a source's stories vanish from the
+build when they do. Pruning by page membership would discard their read state
+during the outage and resurrect every story as unread once the feed recovered.
+
 ## How long stories stay on the page
 
 Each build starts from scratch: there is no archive. A story is on the page only

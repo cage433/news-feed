@@ -58,6 +58,9 @@ jobs:
       - name: Test filters
         run: deno run --allow-read=. test_filters.js
 
+      - name: Test read-state expiry
+        run: deno run --allow-read=. test_read_expiry.js
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: out

@@ -27,15 +27,26 @@ class El {
     // Bubble to the nav that owns this chip.
     if (sourcesNav._children.includes(this)) for (const fn of sourcesNav._handlers) fn(ev);
   }
+  fire(ev = {}) { for (const fn of this._handlers) fn({ target: this, ...ev }); }
   closest(sel) {
-    if (sel === ".chip") return this._classes.has("chip") ? this : null;
+    const cls = sel.slice(1);
+    if (this._classes.has(cls)) return this;
+    // A .mark or .headline resolves upward to the .item that owns it.
+    if (cls === "item" && this._owner) return this._owner;
     return null;
   }
 }
 
 // Build the DOM from the real generated markup.
-const items = [...html.matchAll(/<li class="item" data-source="([^"]+)"/g)]
-  .map(([, source]) => new El("li", { source }, ["item"]));
+const items = [...html.matchAll(/<li class="item" data-source="([^"]+)" data-id="([^"]+)"/g)]
+  .map(([, source, id]) => {
+    const li = new El("li", { source, id }, ["item"]);
+    li._mark = new El("button", {}, ["mark"]);
+    li._headline = new El("a", {}, ["headline"]);
+    li._mark._owner = li; li._headline._owner = li;
+    li.querySelector = (sel) => (sel === ".mark" ? li._mark : null);
+    return li;
+  });
 
 const sourceChips = [...html.matchAll(/<button class="chip src" data-source="([^"]+)"/g)]
   .map(([, source]) => new El("button", { source }, ["chip", "src"]));
@@ -44,7 +55,10 @@ const times = [...html.matchAll(/<time datetime="([^"]+)"(\s+data-undated="1")?/
   .map(([, datetime, undated]) => new El("time", undated ? { datetime, undated: "1" } : { datetime }));
 
 const clearBtn = new El("button", {}, ["chip", "link"]);
+const unreadBtn = new El("button", {}, ["chip"]);
+const markAllBtn = new El("button", {}, ["chip", "link"]);
 const shown = new El("span", {});
+const unreadCount = new El("span", {});
 const sourcesNav = new El("nav", {}); sourcesNav._children = [...sourceChips, clearBtn];
 const list = new El("ul", {});
 
@@ -59,7 +73,10 @@ Object.defineProperty(globalThis, "localStorage", {
   },
 });
 globalThis.document = {
-  getElementById: (id) => ({ list, clear: clearBtn, shown, sources: sourcesNav }[id]),
+  getElementById: (id) => ({
+    list, shown, sources: sourcesNav, clear: clearBtn,
+    unread: unreadCount, "unread-only": unreadBtn, "mark-all": markAllBtn,
+  }[id]),
   querySelectorAll: (sel) => {
     if (sel === "time[datetime]") return times;
     if (sel === ".chip.src") return sourceChips;
@@ -138,6 +155,56 @@ a.click(true);
 check("exclusion persisted",
   JSON.parse(store["newsfeed-filters"]).excluded, [a.dataset.source]);
 clearBtn.click();
+
+// ---------- read / unread ----------
+const unread = () => Number(unreadCount.textContent);
+const fire = (el) => { for (const fn of list._handlers) fn({ target: el }); };
+
+check("everything starts unread", unread(), TOTAL);
+check("nothing marked read", items.some((i) => i.classList.contains("is-read")), false);
+
+// opening a story marks it read, but leaves it on the page
+const story = items[0];
+fire(story._headline);
+check("opening marks read", story.classList.contains("is-read"), true);
+check("unread count drops", unread(), TOTAL - 1);
+check("read story still visible", story.hidden, false);
+check("shown count unchanged", Number(shown.textContent), TOTAL);
+
+// the tick toggles both ways without opening
+const other = items[1];
+fire(other._mark);
+check("tick marks read", other.classList.contains("is-read"), true);
+check("tick updates its own title", other._mark.title, "Mark as unread");
+fire(other._mark);
+check("tick marks unread again", other.classList.contains("is-read"), false);
+check("unread count restored", unread(), TOTAL - 1);
+
+// unread-only hides read stories
+unreadBtn.fire();
+check("unread only hides read stories", visible(), TOTAL - 1);
+check("unread toggle marked active", unreadBtn.classList.contains("is-active"), true);
+check("unread count ignores the toggle", unread(), TOTAL - 1);
+unreadBtn.fire();
+check("turning it off restores", visible(), TOTAL);
+
+// read state is independent of the source filter
+a.click();
+check("focus still works with read state", visible(), bySource(a.dataset.source));
+markAllBtn.fire();
+check("mark all read only affects visible", unread(), 0);
+a.click();
+check("stories outside the focus stayed unread",
+  unread(), TOTAL - bySource(a.dataset.source) - 1);
+
+// persistence and pruning
+const readIds = Object.keys(JSON.parse(store["newsfeed-read"]));
+check("read state persisted separately", readIds.includes(story.dataset.id), true);
+check("read state survives clearing filters",
+  (clearBtn.click(), story.classList.contains("is-read")), true);
+check("unread-only persisted in filters",
+  "unreadOnly" in JSON.parse(store["newsfeed-filters"]), true);
+check("read ids are canonical links", readIds.every((id) => id.startsWith("http")), true);
 
 // --- undated rendering
 const undated = times.filter((t) => t.dataset.undated);

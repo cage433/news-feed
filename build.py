@@ -283,12 +283,16 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
             f'<p class="summary">{e(item.summary)}</p>' if item.summary else ""
         )
         rows.append(
-            f'<li class="item" data-source="{e(slug(item.source))}">'
+            # data-id is the canonical link: stable across rebuilds, which is
+            # what read state has to hang off.
+            f'<li class="item" data-source="{e(slug(item.source))}"'
+            f' data-id="{e(canonical(item.link))}">'
             f'<a class="headline" href="{e(item.link)}" target="_blank" rel="noopener noreferrer">{e(item.title)}</a>'
             f'{summary}'
             f'<p class="meta"><span class="source">{e(item.source)}</span>'
             f'<time datetime="{e(iso)}"{"" if item.dated else " data-undated=\"1\""}>'
-            f'{e(item.published.strftime("%d %b %H:%M"))}</time></p>'
+            f'{e(item.published.strftime("%d %b %H:%M"))}</time>'
+            f'<button class="mark" type="button" title="Mark as read">✓</button></p>'
             f"</li>"
         )
 
@@ -341,6 +345,19 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
   .chip.src.is-excluded {{ opacity: .38; text-decoration: line-through; }}
   .chip.src.is-dimmed {{ opacity: .45; }}
   .chip.src[hidden], .chip.link[hidden] {{ display: none; }}
+  .view {{ margin-top: -.9rem; }}
+  #unread-only.is-active {{ background: var(--accent); color: #fff; }}
+  /* Read stories stay on the page but recede, so the eye lands on what's
+     new without anything disappearing unless you ask for it. */
+  .item.is-read {{ opacity: .5; }}
+  .item.is-read .headline {{ font-weight: 500; color: var(--muted); }}
+  .mark {{
+    font: inherit; font-size: .8rem; line-height: 1; cursor: pointer;
+    margin-left: auto; padding: .15rem .4rem; border-radius: 5px;
+    background: none; border: 1px solid var(--line); color: var(--muted);
+  }}
+  .mark:hover {{ border-color: var(--accent); color: var(--accent); }}
+  .item.is-read .mark {{ background: var(--chip); }}
   .count {{ opacity: .55; margin-left: .35rem; font-variant-numeric: tabular-nums; }}
   .chip.link {{
     background: none; color: var(--muted); text-decoration: underline;
@@ -374,12 +391,19 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
 <div class="wrap">
   <header>
     <h1>News Feed</h1>
-    <p class="built"><span id="shown">{len(items)}</span> stories · updated <time id="built" datetime="{e(built.isoformat())}">{e(built.strftime("%d %b %Y %H:%M UTC"))}</time></p>
+    <p class="built"><span id="shown">{len(items)}</span> stories ·
+       <span id="unread">0</span> unread · updated
+       <time id="built" datetime="{e(built.isoformat())}">{e(built.strftime("%d %b %Y %H:%M UTC"))}</time></p>
   </header>
 
   <nav class="filters sources" id="sources">
     {"".join(source_chips)}
     <button class="chip link" id="clear" hidden>all</button>
+  </nav>
+
+  <nav class="filters view">
+    <button class="chip" id="unread-only" type="button">unread only</button>
+    <button class="chip link" id="mark-all" type="button">mark all read</button>
   </nav>
 
   <ul id="list">
@@ -388,8 +412,10 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
 
   <footer>
     <p>Click a source to show only that one, shift-click to hide it; repeat to
-       undo. Choices are remembered in this browser. Edit <code>feeds.txt</code>
-       to change sources.</p>
+       undo. Opening a story marks it read, or use ✓ to mark it without opening.
+       Filters and read state are remembered in this browser only, so they don't
+       follow you to another device. Edit <code>feeds.txt</code> to change
+       sources.</p>
     {problems}
   </footer>
 </div>
@@ -423,17 +449,54 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
   // Two independent source filters: `focus` narrows to a single source,
   // `excluded` hides several. Focus wins while it's set — combining them
   // would let you focus a source and exclude it at the same time.
+  const unreadEl = document.getElementById("unread");
+  const unreadBtn = document.getElementById("unread-only");
+  const markAllBtn = document.getElementById("mark-all");
+
   const saved = JSON.parse(localStorage.getItem("newsfeed-filters") || "{{}}");
   let focus = saved.focus || null;
+  let unreadOnly = Boolean(saved.unreadOnly);
   const excluded = new Set(saved.excluded || []);
 
+  // Read state is keyed by canonical link and kept separately, so clearing
+  // filters never clears what you've read. Each entry stores when it was
+  // marked, and old ones expire — pruning to "stories on the page right now"
+  // would wipe a source's history during a transient feed outage, and every
+  // one of its stories would come back unread.
+  const READ_TTL_DAYS = 180;
+  const raw = JSON.parse(localStorage.getItem("newsfeed-read") || "{{}}");
+  const horizon = Date.now() - READ_TTL_DAYS * 86400000;
+  const read = new Map(
+    Object.entries(Array.isArray(raw) ? {{}} : raw).filter(([, at]) => at > horizon));
+
+  function saveRead() {{
+    localStorage.setItem("newsfeed-read", JSON.stringify(Object.fromEntries(read)));
+  }}
+
+  function setRead(item, value) {{
+    if (value) read.set(item.dataset.id, Date.now());
+    else read.delete(item.dataset.id);
+    saveRead();
+  }}
+
+  saveRead();  // persist the expiry sweep even if nothing else happens
+
   function apply() {{
-    let shown = 0;
+    let shown = 0, unread = 0;
     for (const item of items) {{
       const src = item.dataset.source;
-      const ok = focus ? src === focus : !excluded.has(src);
+      const isRead = read.has(item.dataset.id);
+      const passesSource = focus ? src === focus : !excluded.has(src);
+      const ok = passesSource && (!unreadOnly || !isRead);
+
       item.hidden = !ok;
+      item.classList.toggle("is-read", isRead);
+      const mark = item.querySelector(".mark");
+      mark.title = isRead ? "Mark as unread" : "Mark as read";
       if (ok) shown++;
+      // Unread count tracks the source filter but ignores the unread toggle —
+      // otherwise turning "unread only" on would always report zero left.
+      if (passesSource && !isRead) unread++;
     }}
 
     for (const c of sourceChips) {{
@@ -443,11 +506,14 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
       c.classList.toggle("is-dimmed", Boolean(focus) && focus !== src);
     }}
 
+    unreadBtn.classList.toggle("is-active", unreadOnly);
+    markAllBtn.hidden = unread === 0;
     // Only offer "all" when there's actually something to clear.
     clearBtn.hidden = !focus && excluded.size === 0;
     countEl.textContent = shown;
+    unreadEl.textContent = unread;
     localStorage.setItem("newsfeed-filters",
-      JSON.stringify({{ focus, excluded: [...excluded] }}));
+      JSON.stringify({{ focus, excluded: [...excluded], unreadOnly }}));
   }}
 
   document.getElementById("sources").addEventListener("click", (ev) => {{
@@ -472,6 +538,33 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
         excluded.clear();
       }}
     }}
+    apply();
+  }});
+
+  // Opening a story marks it read; the ✓ button toggles without opening.
+  list.addEventListener("click", (ev) => {{
+    const item = ev.target.closest(".item");
+    if (!item) return;
+
+    if (ev.target.closest(".mark")) {{
+      setRead(item, !read.has(item.dataset.id));
+      apply();
+    }} else if (ev.target.closest(".headline")) {{
+      setRead(item, true);
+      apply();
+    }}
+  }});
+
+  unreadBtn.addEventListener("click", () => {{
+    unreadOnly = !unreadOnly;
+    apply();
+  }});
+
+  markAllBtn.addEventListener("click", () => {{
+    // Only what's currently visible, so it respects the source filter and
+    // can't silently bury stories you've filtered out of sight.
+    for (const item of items) if (!item.hidden) read.set(item.dataset.id, Date.now());
+    saveRead();
     apply();
   }});
 
