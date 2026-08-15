@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import feedparser
 
@@ -33,6 +33,16 @@ SUMMARY_CHARS = 220
 WORKERS = 8
 RETRIES = 3             # transient 5xx / network blips
 RETRY_BACKOFF = 2.0     # seconds, multiplied by attempt number
+
+# Tab icon. An emoji drawn into an inline SVG and embedded as a data URI, so
+# the page stays a single self-contained file — no favicon.ico to publish
+# alongside it, and no request for the browser to 404 on. Change the emoji
+# here to change the icon.
+FAVICON_EMOJI = "📰"
+FAVICON = "data:image/svg+xml," + quote(
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>"
+    f"<text y='.95em' font-size='92'>{FAVICON_EMOJI}</text></svg>"
+)
 
 # Identify honestly. Several of these sites sit behind bot filters that
 # allow-list real feed readers but challenge generic scraper user agents.
@@ -330,6 +340,8 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>News Feed</title>
+<link rel="icon" href="{FAVICON}">
+<link rel="apple-touch-icon" href="{FAVICON}">
 <style>
   :root {{
     --bg: #fbfaf8; --panel: #ffffff; --ink: #1b1a18; --muted: #6b6862;
