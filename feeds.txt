@@ -1,0 +1,23 @@
+# One feed per line:   Section | Display name | Feed URL
+#
+# Lines starting with # are ignored, so you can park a source here
+# without deleting it. Sections become the filter buttons on the page.
+# Add or remove lines freely — nothing else needs to change.
+
+News        | MintPress News        | https://www.mintpressnews.com/feed/
+News        | Breakthrough News     | https://breakthroughnews.org/feed/
+News        | CounterPunch          | https://www.counterpunch.org/feed/
+News        | Media Lens            | https://www.medialens.org/feed/
+
+Analysis    | Monthly Review        | https://monthlyreview.org/feed/
+Analysis    | Cosmonaut             | https://cosmonautmag.com/rss
+Analysis    | Weekly Worker         | https://weeklyworker.co.uk/worker/rss
+Analysis    | CEPR                  | https://cepr.net/feed/
+
+Regional    | Electronic Intifada   | https://electronicintifada.net/rss.xml
+Regional    | Venezuelanalysis      | https://venezuelanalysis.com/feed/
+
+# NACLA no longer publishes an RSS feed — every feed URL (/feed, /feed/,
+# /?feed=rss2, /category/news-analysis/feed) 302-redirects to the homepage.
+# Left here in case they restore it; uncomment to test again.
+# Regional  | NACLA                 | https://nacla.org/feed/
