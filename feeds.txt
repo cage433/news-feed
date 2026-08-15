@@ -1,20 +1,28 @@
-# One feed per line:   Display name | Feed URL
+# One feed per line:   Display name | Feed URL | days to keep
+#
+# The third column is how far back to show stories from that source, and
+# is optional — leave it off and it defaults to 14 days.
+#
+# It can only ever shorten a source's window, never extend it: a story
+# also has to still be in the publisher's own feed to appear at all.
+# CounterPunch, for instance, only carries about 1.6 days of stories, so
+# raising its number changes nothing. Slow, low-volume sources like Media
+# Lens are the ones where a larger number actually shows you more.
 #
 # Lines starting with # are ignored, so you can park a source here
-# without deleting it. Add or remove lines freely — nothing else
-# needs to change. The page rebuilds itself after you push.
+# without deleting it. The page rebuilds itself after you push.
 
-MintPress News        | https://www.mintpressnews.com/feed/
-Breakthrough News     | https://breakthroughnews.org/feed/
-CounterPunch          | https://www.counterpunch.org/feed/
-Media Lens            | https://www.medialens.org/feed/
-Monthly Review        | https://monthlyreview.org/feed/
-Cosmonaut             | https://cosmonautmag.com/rss
-Weekly Worker         | https://weeklyworker.co.uk/worker/rss
-CEPR                  | https://cepr.net/feed/
-Electronic Intifada   | https://electronicintifada.net/rss.xml
-Venezuelanalysis      | https://venezuelanalysis.com/feed/
+MintPress News        | https://www.mintpressnews.com/feed/      | 14
+Breakthrough News     | https://breakthroughnews.org/feed/       | 14
+CounterPunch          | https://www.counterpunch.org/feed/       | 14
+Media Lens            | https://www.medialens.org/feed/          | 14
+Monthly Review        | https://monthlyreview.org/feed/          | 14
+Cosmonaut             | https://cosmonautmag.com/rss             | 14
+Weekly Worker         | https://weeklyworker.co.uk/worker/rss    | 14
+CEPR                  | https://cepr.net/feed/                   | 14
+Electronic Intifada   | https://electronicintifada.net/rss.xml   | 14
+Venezuelanalysis      | https://venezuelanalysis.com/feed/       | 14
 
 # NACLA publishes no feed — every feed URL redirects to their homepage.
 # Left here in case they restore it.
-# NACLA               | https://nacla.org/feed/
+# NACLA               | https://nacla.org/feed/                  | 14

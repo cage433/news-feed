@@ -26,7 +26,7 @@ FEEDS_FILE = ROOT / "feeds.txt"
 OUT_FILE = ROOT / "out" / "index.html"
 STATE_FILE = ROOT / "state.json"
 
-MAX_AGE_DAYS = 21       # drop anything older than this
+DEFAULT_MAX_AGE_DAYS = 14   # used when feeds.txt gives no per-feed value
 MAX_PER_FEED = 25       # keep a prolific source from swamping the page
 MAX_TOTAL = 400         # overall cap on the page
 SUMMARY_CHARS = 220
@@ -53,22 +53,44 @@ class Item:
 class Feed:
     name: str
     url: str
+    max_age_days: int = DEFAULT_MAX_AGE_DAYS
 
 
-def read_feeds() -> list[Feed]:
-    feeds = []
+def read_feeds() -> tuple[list[Feed], list[tuple[str, str]]]:
+    """Return (feeds, problems). Problems are reported on the page as well as
+    the log — a skipped line means a source silently vanishes otherwise."""
+    feeds: list[Feed] = []
+    problems: list[tuple[str, str]] = []
+
     for lineno, raw in enumerate(FEEDS_FILE.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
+
         parts = [p.strip() for p in line.split("|")]
-        if len(parts) == 3:
-            parts = parts[1:]  # tolerate the old 'Section | Name | URL' format
-        if len(parts) != 2:
-            print(f"feeds.txt:{lineno}: expected 'Name | URL', skipping", file=sys.stderr)
+        if len(parts) not in (2, 3):
+            problems.append((f"feeds.txt:{lineno}",
+                             "expected 'Name | URL' or 'Name | URL | days', skipped"))
             continue
-        feeds.append(Feed(*parts))
-    return feeds
+
+        name, url = parts[0], parts[1]
+        age = DEFAULT_MAX_AGE_DAYS
+        if len(parts) == 3:
+            try:
+                age = int(parts[2])
+                if age < 1:
+                    raise ValueError
+            except ValueError:
+                problems.append((f"feeds.txt:{lineno}",
+                                 f"'{parts[2]}' is not a positive number of days, "
+                                 f"using {DEFAULT_MAX_AGE_DAYS}"))
+                age = DEFAULT_MAX_AGE_DAYS
+
+        feeds.append(Feed(name, url, age))
+
+    for where, msg in problems:
+        print(f"  ! {where}: {msg}", file=sys.stderr)
+    return feeds, problems
 
 
 TAG_RE = re.compile(r"<[^>]+>")
@@ -137,7 +159,7 @@ def fetch(feed: Feed) -> tuple[Feed, list[Item], str | None]:
         return feed, [], problem
 
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=MAX_AGE_DAYS)
+    cutoff = now - timedelta(days=feed.max_age_days)
     items: list[Item] = []
     newest: datetime | None = None
 
@@ -196,7 +218,6 @@ def collect(feeds: list[Feed]) -> tuple[list[Item], list[tuple[str, str]]]:
 
     state = load_state()
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=MAX_AGE_DAYS)
 
     items: list[Item] = []
     errors: list[tuple[str, str]] = []
@@ -220,14 +241,14 @@ def collect(feeds: list[Feed]) -> tuple[list[Item], list[tuple[str, str]]]:
                 # top of the page instead of resurfacing on every build.
                 first_seen = state.setdefault(key, now.isoformat())
                 item.published = datetime.fromisoformat(first_seen)
-                if item.published < cutoff:
+                if item.published < now - timedelta(days=feed.max_age_days):
                     continue
 
             seen.add(key)
             items.append(item)
             kept += 1
 
-        print(f"  · {feed.name}: {kept} items", file=sys.stderr)
+        print(f"  · {feed.name}: {kept} items (last {feed.max_age_days}d)", file=sys.stderr)
 
     save_state(state)
     items.sort(key=lambda i: i.published, reverse=True)
@@ -462,13 +483,14 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
 
 
 def main() -> int:
-    feeds = read_feeds()
+    feeds, problems = read_feeds()
     if not feeds:
         print("No feeds configured in feeds.txt", file=sys.stderr)
         return 1
 
     print(f"Fetching {len(feeds)} feeds…", file=sys.stderr)
     items, errors = collect(feeds)
+    errors = problems + errors
 
     if not items:
         print("Every feed failed — not overwriting the page.", file=sys.stderr)

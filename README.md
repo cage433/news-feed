@@ -10,11 +10,16 @@ to GitHub Pages.
 Edit `feeds.txt`. One line per feed:
 
 ```
-Display name | Feed URL
+Display name | Feed URL | days to keep
 ```
 
-Lines starting with `#` are ignored, so you can park a source without deleting
-it. Commit and push; the page rebuilds on its own.
+The third column is optional and defaults to 14 days. Lines starting with `#`
+are ignored, so you can park a source without deleting it. Commit and push; the
+page rebuilds on its own.
+
+A malformed line is skipped rather than failing the build, but it's reported in
+the page footer as well as the log, so a typo can't make a source quietly
+disappear.
 
 To find a site's feed URL, try `https://thesite.com/feed/` first — that covers
 most WordPress sites. Otherwise view the homepage source and look for
@@ -40,20 +45,26 @@ loads instantly.
 ## How long stories stay on the page
 
 Each build starts from scratch: there is no archive. A story is on the page only
-while it is *both* still in the publisher's own feed and newer than
-`MAX_AGE_DAYS` (currently 21). Whichever runs out first wins, and which one that
-is varies enormously by publisher:
+while it is *both* still in the publisher's own feed and newer than that feed's
+third column in `feeds.txt`. Whichever runs out first wins, and which one that
+is varies enormously by publisher — measured across these ten feeds:
 
-- **CounterPunch** carries 15 items spanning about **1.6 days**. Its own feed is
-  the limit; the age cutoff never comes into play.
-- **Electronic Intifada** and **Venezuelanalysis** hold roughly 3 weeks, so the
-  two limits land in about the same place.
-- **Media Lens** posts rarely — its 10 items stretch back 5 months, so the
-  21-day cutoff hides almost all of them.
+| Source | Items in feed | Feed reaches back |
+|---|---|---|
+| CounterPunch | 15 | 1.6 days |
+| Breakthrough News | 8 | 3 days |
+| Venezuelanalysis | 16 | 18 days |
+| Electronic Intifada | 20 | 24 days |
+| Cosmonaut | 20 | 30 days |
+| Monthly Review | 10 | 38 days |
+| MintPress News | 10 | 58 days |
+| Media Lens | 10 | 164 days |
 
-Raising `MAX_AGE_DAYS` surfaces more from the slow, low-volume sources and has
-no effect at all on the fast ones. Nothing can extend a fast source's window
-short of storing entries between builds.
+So the per-feed number can only ever *shorten* a source's window. Raising
+CounterPunch's to 60 changes nothing, because their feed rolls over in under two
+days. Raising Media Lens's genuinely shows more, because their feed holds five
+months of posts. Extending a fast source's window would mean storing entries
+between builds, which this deliberately doesn't do.
 
 A feed that fails does not fail the build; it's listed in the page footer
 instead. The build only exits non-zero if *every* feed fails, which prevents a
