@@ -19,7 +19,6 @@ Media Lens            | https://www.medialens.org/feed/          | 14
 Monthly Review        | https://monthlyreview.org/feed/          | 14
 Cosmonaut             | https://cosmonautmag.com/rss             | 14
 Weekly Worker         | https://weeklyworker.co.uk/worker/rss    | 14
-CEPR                  | https://cepr.net/feed/                   | 14
 Electronic Intifada   | https://electronicintifada.net/rss.xml   | 14
 Venezuelanalysis      | https://venezuelanalysis.com/feed/       | 14
 

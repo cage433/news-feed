@@ -296,6 +296,8 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
             f"</li>"
         )
 
+    # Only rendered when something actually went wrong, so the page ends
+    # cleanly at the last story on a normal run.
     problems = ""
     if errors:
         listed = ", ".join(f"{e(name)} ({e(msg)})" for name, msg in errors)
@@ -366,6 +368,8 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
     background: none; color: var(--muted); text-decoration: underline;
     padding: .25rem .4rem; font-size: .78rem;
   }}
+  footer {{ margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }}
+  .problems {{ color: var(--muted); font-size: .8rem; margin: 0; }}
   ul {{ list-style: none; margin: 0; padding: 0; }}
   .item {{
     background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
@@ -384,9 +388,6 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
   }}
   .source {{ font-weight: 600; color: var(--accent); }}
   .meta time::before {{ content: "·"; margin-right: .5rem; }}
-  footer {{ margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line);
-            color: var(--muted); font-size: .8rem; }}
-  .problems {{ color: var(--muted); font-size: .8rem; }}
   .empty {{ color: var(--muted); }}
 </style>
 </head>
@@ -602,7 +603,7 @@ def main() -> int:
     OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     OUT_FILE.write_text(render(items, errors), encoding="utf-8")
 
-    print(f"Wrote {OUT_FILE} — {len(items)} items, {len(errors)} feeds unavailable", file=sys.stderr)
+    print(f"Wrote {OUT_FILE} — {len(items)} items, {len(errors)} problems", file=sys.stderr)
     return 0
 
 

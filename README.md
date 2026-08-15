@@ -89,16 +89,16 @@ days. Raising Media Lens's genuinely shows more, because their feed holds five
 months of posts. Extending a fast source's window would mean storing entries
 between builds, which this deliberately doesn't do.
 
-A feed that fails does not fail the build; it's listed in the page footer
-instead. The build only exits non-zero if *every* feed fails, which prevents a
+A feed that fails does not fail the build; it's listed in a footer that only
+appears when something has gone wrong, so a normal run ends cleanly at the last
+story. The build exits non-zero only if *every* feed fails, which prevents a
 network blip from replacing a good page with an empty one.
 
 ## Notes on specific sources
 
-- **CEPR** — their `/feed/` is abandoned: the newest entry is the WordPress
-  default "Hello world!" post from July 2024, and it's the only feed they
-  advertise. It stays in `feeds.txt` so the footer keeps reporting it; if they
-  ever fix it, it starts working with no changes here.
+- **CEPR** — removed. Their `/feed/` is abandoned: the newest entry is the
+  WordPress default "Hello world!" post from July 2024, and it was the only feed
+  they advertised.
 - **Weekly Worker** — its feed is at the non-standard `/worker/rss`, and it
   publishes no per-entry dates, only a channel timestamp regenerated on each
   request. Those entries are timestamped with the date this build first saw the
