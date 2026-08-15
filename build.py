@@ -273,12 +273,13 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
     e = html.escape
     built = datetime.now(timezone.utc)
 
-    # One chip per source that actually produced stories, ordered by volume
-    # so the sources most worth filtering sit first.
+    # One chip per source that actually produced stories, in alphabetical
+    # order — with this many sources, being able to find one by name beats
+    # having the noisiest first.
     counts: dict[str, int] = {}
     for item in items:
         counts[item.source] = counts.get(item.source, 0) + 1
-    ranked = sorted(counts, key=lambda s: (-counts[s], s.lower()))
+    ranked = sorted(counts, key=lambda s: s.lower())
 
     source_chips = [
         f'<button class="chip src" data-source="{e(slug(name))}">'
