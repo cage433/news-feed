@@ -411,10 +411,12 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
     margin-left: auto; flex: none; width: 1.15rem; height: 1.15rem;
     display: inline-flex; align-items: center; justify-content: center;
     padding: 0; border-radius: 4px;
-    background: none; border: 1px solid var(--line); color: var(--muted);
+    /* Same colour whether ticked or not: the tick alone carries the state.
+       Using --line for the empty box made it invisible in dark mode, where
+       the border and the panel behind it are nearly the same value. */
+    background: none; border: 1px solid var(--accent); color: var(--accent);
   }}
-  .mark:hover {{ border-color: var(--accent); color: var(--accent); }}
-  .item.is-read .mark {{ color: var(--accent); border-color: var(--accent); }}
+  .mark:hover {{ background: var(--chip); }}
   .count {{ opacity: .55; margin-left: .35rem; font-variant-numeric: tabular-nums; }}
   .chip.link {{
     background: none; color: var(--muted); text-decoration: underline;
