@@ -368,6 +368,13 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
     font: inherit; font-size: .85rem; cursor: pointer; color: var(--ink);
     background: var(--chip); border: 1px solid transparent; border-radius: 999px;
     padding: .3rem .8rem;
+    /* A long press excludes a source, so suppress the OS text-selection
+       callout that would otherwise fire at the same moment.
+       touch-action also drops the 300ms double-tap delay. */
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
   }}
   .chip:hover {{ border-color: var(--line); }}
   /* Three states: focused (solid), excluded (struck through), and dimmed —
@@ -559,29 +566,73 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
       JSON.stringify({{ focus, excluded: [...excluded], unreadOnly }}));
   }}
 
-  document.getElementById("sources").addEventListener("click", (ev) => {{
+  function toggleExclude(src) {{
+    // Drop any focus — otherwise excluding the focused source would leave an
+    // empty page with no obvious way back.
+    focus = null;
+    if (excluded.has(src)) excluded.delete(src);
+    else excluded.add(src);
+  }}
+
+  function toggleFocus(src) {{
+    // Focusing is a fresh start: drop exclusions too, so no invisible state
+    // survives behind the focused view and surprises you later.
+    focus = focus === src ? null : src;
+    excluded.clear();
+  }}
+
+  const sourcesNav = document.getElementById("sources");
+
+  sourcesNav.addEventListener("click", (ev) => {{
     const chip = ev.target.closest(".chip");
     if (!chip) return;
+
+    // Swallow the click the browser fires after a long press.
+    if (longPressed) {{ longPressed = false; return; }}
 
     if (chip === clearBtn) {{
       focus = null;
       excluded.clear();
     }} else if (chip.dataset.source) {{
-      const src = chip.dataset.source;
-      if (ev.shiftKey) {{
-        // Exclude, and drop any focus — otherwise excluding the focused
-        // source would leave an empty page with no obvious way back.
-        focus = null;
-        if (excluded.has(src)) excluded.delete(src);
-        else excluded.add(src);
-      }} else {{
-        // Focusing is a fresh start: drop exclusions too, so no invisible
-        // state survives behind the focused view and surprises you later.
-        focus = focus === src ? null : src;
-        excluded.clear();
-      }}
+      if (ev.shiftKey) toggleExclude(chip.dataset.source);
+      else toggleFocus(chip.dataset.source);
     }}
     apply();
+  }});
+
+  // Touch has no shift key, so a long press is the mobile equivalent of
+  // shift-click. Restricted to touch and pen: on a mouse it would mean a
+  // slow click silently excluded a source instead of focusing it.
+  const LONG_PRESS_MS = 450;
+  let pressTimer = null;
+  let longPressed = false;
+
+  function cancelPress() {{
+    if (pressTimer !== null) {{ clearTimeout(pressTimer); pressTimer = null; }}
+  }}
+
+  sourcesNav.addEventListener("pointerdown", (ev) => {{
+    if (ev.pointerType !== "touch" && ev.pointerType !== "pen") return;
+    const chip = ev.target.closest(".chip.src");
+    if (!chip) return;
+
+    longPressed = false;
+    cancelPress();
+    pressTimer = setTimeout(() => {{
+      pressTimer = null;
+      longPressed = true;          // tells the click handler to stand down
+      toggleExclude(chip.dataset.source);
+      apply();
+    }}, LONG_PRESS_MS);
+  }});
+
+  for (const evt of ["pointerup", "pointercancel", "pointermove", "pointerleave"]) {{
+    sourcesNav.addEventListener(evt, cancelPress);
+  }}
+
+  // Stop iOS/Android offering their own copy-and-select menu on a long press.
+  sourcesNav.addEventListener("contextmenu", (ev) => {{
+    if (ev.target.closest(".chip.src")) ev.preventDefault();
   }});
 
   // Opening a story marks it read; the ✓ button toggles without opening.

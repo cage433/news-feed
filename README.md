@@ -121,6 +121,18 @@ de-duplicates by link, and writes `out/index.html`. That file is
 self-contained — no external CSS, fonts, or scripts — so it works offline and
 loads instantly.
 
+## Filtering
+
+Click a source to show only that one; click it again to go back. Shift-click
+hides a source instead, and shift-clicking again re-includes it. `all` clears
+everything and only appears when something is filtered.
+
+On a touch screen there is no shift key, so **a long press (450ms) is the
+equivalent of shift-click**. It is deliberately limited to touch and pen input:
+on a mouse it would mean that a slow click silently excluded a source instead of
+focusing it. The click the browser fires after a long press is swallowed, and a
+press cancelled by scrolling does nothing.
+
 ## Read state
 
 Opening a story marks it read; the ✓ button on each row toggles it without

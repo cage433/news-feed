@@ -14,25 +14,28 @@ class El {
   constructor(tag, attrs = {}, classes = []) {
     this.tag = tag; this.dataset = attrs; this._classes = new Set(classes);
     this.hidden = false; this.textContent = ""; this.title = "";
-    this._handlers = [];
+    this._handlers = {};   // keyed by event type: the page listens for several
     this.classList = {
       toggle: (c, on) => on ? this._classes.add(c) : this._classes.delete(c),
       contains: (c) => this._classes.has(c),
     };
   }
   get dateTime() { return this.dataset.datetime; }
-  addEventListener(_type, fn) { this._handlers.push(fn); }
+  addEventListener(type, fn) { (this._handlers[type] ||= []).push(fn); }
   click(shiftKey = false) {
-    const ev = { target: this, shiftKey };
     // Bubble to the nav that owns this chip.
-    if (sourcesNav._children.includes(this)) for (const fn of sourcesNav._handlers) fn(ev);
+    if (sourcesNav._children.includes(this)) sourcesNav.dispatch("click", { target: this, shiftKey });
   }
-  fire(ev = {}) { for (const fn of this._handlers) fn({ target: this, ...ev }); }
+  dispatch(type, ev = {}) {
+    for (const fn of this._handlers[type] || []) fn({ target: this, ...ev });
+  }
+  fire(ev = {}) { this.dispatch("click", ev); }
   closest(sel) {
-    const cls = sel.slice(1);
-    if (this._classes.has(cls)) return this;
+    // Handles compound selectors like ".chip.src", which the page uses.
+    const classes = sel.split(".").filter(Boolean);
+    if (classes.every((c) => this._classes.has(c))) return this;
     // A .mark or .headline resolves upward to the .item that owns it.
-    if (cls === "item" && this._owner) return this._owner;
+    if (sel === ".item" && this._owner) return this._owner;
     return null;
   }
 }
@@ -164,7 +167,7 @@ clearBtn.click();
 
 // ---------- read / unread ----------
 const unread = () => Number(unreadCount.textContent);
-const fire = (el) => { for (const fn of list._handlers) fn({ target: el }); };
+const fire = (el) => list.dispatch("click", { target: el });
 
 check("preseeded story loads as read", PRESEEDED.classList.contains("is-read"), true);
 check("its box loads already ticked", PRESEEDED._mark.textContent, "✓");
@@ -234,6 +237,54 @@ check("read state survives clearing filters",
 check("unread-only persisted in filters",
   "unreadOnly" in JSON.parse(store["newsfeed-filters"]), true);
 check("read ids are canonical links", readIds.every((id) => id.startsWith("http")), true);
+
+// ---------- long press (the mobile equivalent of shift-click) ----------
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const HOLD = 600;   // comfortably past the page's 450ms threshold
+
+// A touch held on a chip excludes that source, without any shift key.
+clearBtn.click();
+sourcesNav.dispatch("pointerdown", { target: a, pointerType: "touch" });
+await sleep(HOLD);
+check("long press excludes", visible(), TOTAL - bySource(a.dataset.source));
+check("long-pressed chip marked excluded", a.classList.contains("is-excluded"), true);
+
+// The browser fires a click after the press; it must not undo the exclusion.
+a.click();
+check("the click after a long press is swallowed",
+  visible(), TOTAL - bySource(a.dataset.source));
+
+// Holding it again re-includes, matching shift-click's behaviour.
+sourcesNav.dispatch("pointerdown", { target: a, pointerType: "touch" });
+await sleep(HOLD);
+check("long pressing again re-includes", visible(), TOTAL);
+a.click();
+
+// A short tap still focuses.
+clearBtn.click();
+sourcesNav.dispatch("pointerdown", { target: b, pointerType: "touch" });
+await sleep(80);
+sourcesNav.dispatch("pointerup", { target: b, pointerType: "touch" });
+await sleep(HOLD);
+check("a short tap does not exclude", b.classList.contains("is-excluded"), false);
+b.click();
+check("a short tap focuses", visible(), bySource(b.dataset.source));
+b.click();
+
+// Scrolling away mid-press must cancel it, not silently exclude.
+sourcesNav.dispatch("pointerdown", { target: a, pointerType: "touch" });
+await sleep(80);
+sourcesNav.dispatch("pointercancel", { target: a, pointerType: "touch" });
+await sleep(HOLD);
+check("a cancelled press excludes nothing", visible(), TOTAL);
+
+// A slow mouse click is a click, not an exclusion.
+sourcesNav.dispatch("pointerdown", { target: a, pointerType: "mouse" });
+await sleep(HOLD);
+check("holding a mouse button does not exclude", a.classList.contains("is-excluded"), false);
+a.click();
+check("it still focuses", visible(), bySource(a.dataset.source));
+clearBtn.click();
 
 // --- undated rendering
 const undated = times.filter((t) => t.dataset.undated);
