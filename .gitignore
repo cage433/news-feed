@@ -1,5 +1,6 @@
 .venv/
 out/
 state.json
+.publish.lock/
 __pycache__/
 *.pyc

@@ -2,8 +2,42 @@
 
 A single static page listing recent stories from a set of news sites, built
 from their RSS feeds. Links and short summaries only — no article text is
-copied. Rebuilt automatically every 30 minutes by GitHub Actions and published
-to GitHub Pages.
+copied.
+
+**Live at <https://cage433.github.io/news-feed/>**
+
+## How it's published
+
+`publish.sh` runs on Alex's Mac every 30 minutes under launchd. It builds the
+page, runs the tests, and force-pushes a single orphan commit containing
+`index.html` to the `published` branch, which GitHub Pages serves directly.
+
+It runs locally rather than in GitHub Actions because **six sources return HTTP
+403 to GitHub's datacenter IP ranges**: Electronic Intifada and the five
+`*.substack.com` feeds. They answer a home connection without complaint. A CI
+build produced 79 stories from 11 sources where a local one produces 103 from
+17, so the build has to happen somewhere with a residential IP.
+
+Aaron Maté is the exception that proves it — his Substack is on the custom
+domain `aaronmate.net` and is never blocked. The other five have no custom
+domain to use.
+
+The practical cost: **the page only refreshes while the Mac is awake.** Away for
+a week and it will be a week stale. launchd runs a job missed during sleep on
+the next wake, so a closed lid is fine; a shut-down machine is not.
+
+GitHub Actions still runs the test suite on every push, but builds nothing that
+reaches the live site.
+
+### Useful commands
+
+```sh
+./publish.sh                                   # build and publish now
+tail -f ~/Library/Logs/news-feed.log           # watch what it's doing
+launchctl print gui/$UID/com.cage433.newsfeed  # is the timer healthy?
+launchctl bootout gui/$UID/com.cage433.newsfeed    # stop the schedule
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.cage433.newsfeed.plist  # start it
+```
 
 ## Changing the sources
 
@@ -14,8 +48,9 @@ Display name | Feed URL | days to keep
 ```
 
 The third column is optional and defaults to 14 days. Lines starting with `#`
-are ignored, so you can park a source without deleting it. Commit and push; the
-page rebuilds on its own.
+are ignored, so you can park a source without deleting it. The next scheduled
+run picks up the change — no need to push first, though pushing keeps the repo
+honest about what's actually being fetched.
 
 A malformed line is skipped rather than failing the build, but it's reported in
 the page footer as well as the log, so a typo can't make a source quietly
@@ -111,9 +146,10 @@ permanent noise. Those appear in the build log instead.
   cached by the workflow. Without it, Weekly Worker would pin itself to the top
   of the page on every build.
 - **Craig Murray** — behind a Cloudflare bot challenge (`cf-mitigated:
-  challenge`) across the whole site, not just the feed, so an automated build
-  can't fetch it. GitHub Actions runs from datacenter IPs, which Cloudflare
-  challenges most aggressively. Commented out in `feeds.txt`.
+  challenge`) across the whole site, not just the feed, so an automated fetch
+  gets a 403 even from a home connection. Commented out in `feeds.txt`. This is
+  a different problem from the datacenter-IP blocks above and moving the build
+  local did not fix it.
 - **Jason Hickel** — last posted January 2026. Configured and working; he'll
   simply appear when he publishes again.
 - **NACLA** — publishes no feed. Every feed path (`/feed`, `/feed/`,
