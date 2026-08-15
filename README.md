@@ -32,12 +32,56 @@ reaches the live site.
 ### Useful commands
 
 ```sh
-./publish.sh                                   # build and publish now
-tail -f ~/Library/Logs/news-feed.log           # watch what it's doing
-launchctl print gui/$UID/com.cage433.newsfeed  # is the timer healthy?
-launchctl bootout gui/$UID/com.cage433.newsfeed    # stop the schedule
-launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.cage433.newsfeed.plist  # start it
+./publish.sh                    # build and publish now
+./install-agent.sh              # install and start the 30-minute schedule
+./install-agent.sh --status     # is it running, and what did it last do?
+./install-agent.sh --uninstall  # stop and remove the schedule
+tail -f ~/Library/Logs/news-feed.log
 ```
+
+## Moving to another Mac
+
+Nothing here hardcodes a path: `publish.sh` derives the repo location from its
+own position, and `install-agent.sh` generates the launchd plist to match. So
+the move is:
+
+**On the old machine**
+
+```sh
+./install-agent.sh --uninstall
+```
+
+That stops the timer and deletes the plist. The repo, the `published` branch,
+and the live page are untouched — the page simply stops updating.
+
+**On the new machine**
+
+```sh
+brew install deno                                    # if not already present
+git clone git@github.com:cage433/news-feed.git
+cd news-feed
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+./install-agent.sh
+```
+
+`install-agent.sh` checks for the venv, deno, an executable `publish.sh` and a
+git remote before installing, and tells you which is missing rather than
+installing a job that fails silently every 30 minutes.
+
+The new machine needs an SSH key registered with GitHub, since `publish.sh`
+pushes over SSH. `ssh -T git@github.com` confirms it. A passphrase-protected key
+will not work unattended under launchd without an agent loaded.
+
+### Two things that do not come with you
+
+- **Read/unread state** lives in the browser's `localStorage`, not the repo, so
+  the new laptop starts with everything unread. Nothing breaks; there's just no
+  history. Browser profile sync would carry it, otherwise accept the reset.
+- **`state.json`** is gitignored and holds the first-seen dates for undated
+  feeds (Weekly Worker). Without it, that issue's articles get stamped with the
+  date the new machine first sees them, so they briefly look newer than they
+  are. Copy the file across to avoid it, or ignore it — it self-corrects within
+  a week as the issue rolls over.
 
 ## Changing the sources
 

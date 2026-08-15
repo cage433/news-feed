@@ -11,7 +11,10 @@
 set -u
 export PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-REPO="/Users/alex/repos/news-feed"
+# Derived from the script's own location, so the repo can live anywhere on
+# any machine without editing this file. ${0:A:h} is zsh for "absolute
+# directory containing this script".
+REPO="${0:A:h}"
 LOG="$HOME/Library/Logs/news-feed.log"
 LOCK="$REPO/.publish.lock"
 BRANCH="published"
