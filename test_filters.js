@@ -243,10 +243,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const HOLD = 600;   // comfortably past the page's 450ms threshold
 
 // A touch held on a chip excludes that source, without any shift key.
+// The jitter matters: a real finger never holds perfectly still, and
+// cancelling on any movement at all is what broke this on a phone.
 clearBtn.click();
-sourcesNav.dispatch("pointerdown", { target: a, pointerType: "touch" });
+sourcesNav.dispatch("pointerdown", { target: a, pointerType: "touch", clientX: 100, clientY: 200 });
+for (const [dx, dy] of [[1, 0], [2, 1], [1, 2], [3, 1]]) {
+  await sleep(40);
+  sourcesNav.dispatch("pointermove",
+    { target: a, pointerType: "touch", clientX: 100 + dx, clientY: 200 + dy });
+}
+check("a jittering finger keeps the press alive", a.classList.contains("is-pressing"), true);
 await sleep(HOLD);
 check("long press excludes", visible(), TOTAL - bySource(a.dataset.source));
+check("the pressing state is cleared once it fires", a.classList.contains("is-pressing"), false);
 check("long-pressed chip marked excluded", a.classList.contains("is-excluded"), true);
 
 // The browser fires a click after the press; it must not undo the exclusion.
@@ -277,6 +286,25 @@ await sleep(80);
 sourcesNav.dispatch("pointercancel", { target: a, pointerType: "touch" });
 await sleep(HOLD);
 check("a cancelled press excludes nothing", visible(), TOTAL);
+
+// A deliberate drag past the tolerance cancels too.
+sourcesNav.dispatch("pointerdown", { target: a, pointerType: "touch", clientX: 100, clientY: 200 });
+await sleep(60);
+sourcesNav.dispatch("pointermove", { target: a, pointerType: "touch", clientX: 100, clientY: 260 });
+await sleep(HOLD);
+check("dragging away cancels the press", visible(), TOTAL);
+check("and clears the pressing state", a.classList.contains("is-pressing"), false);
+
+// A browser reporting no pointerType should still be treated as touch.
+sourcesNav.dispatch("pointerdown", { target: a, clientX: 100, clientY: 200 });
+await sleep(HOLD);
+check("an unknown pointerType is treated as touch",
+  visible(), TOTAL - bySource(a.dataset.source));
+a.click();
+sourcesNav.dispatch("pointerdown", { target: a, clientX: 100, clientY: 200 });
+await sleep(HOLD);
+check("and toggles back", visible(), TOTAL);
+a.click();
 
 // A slow mouse click is a click, not an exclusion.
 sourcesNav.dispatch("pointerdown", { target: a, pointerType: "mouse" });

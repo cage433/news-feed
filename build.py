@@ -386,6 +386,10 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
   .chip.src.is-focus .count {{ opacity: .75; }}
   .chip.src.is-excluded {{ opacity: .38; text-decoration: line-through; }}
   .chip.src.is-dimmed {{ opacity: .45; }}
+  /* Visible feedback while a long press is arming, so a hold that hasn't
+     registered yet is distinguishable from one that has. */
+  .chip.src.is-pressing {{ transform: scale(.92); opacity: .7; }}
+  .chip.src {{ transition: transform .12s ease, opacity .12s ease; }}
   .chip.src[hidden], .chip.link[hidden] {{ display: none; }}
   .view {{ margin-top: -.9rem; }}
   #unread-only.is-active {{ background: var(--accent); color: #fff; }}
@@ -604,29 +608,51 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
   // shift-click. Restricted to touch and pen: on a mouse it would mean a
   // slow click silently excluded a source instead of focusing it.
   const LONG_PRESS_MS = 450;
+  const MOVE_TOLERANCE = 12;   // px; a resting finger is never perfectly still
   let pressTimer = null;
   let longPressed = false;
+  let pressChip = null;
+  let pressX = 0, pressY = 0;
 
   function cancelPress() {{
     if (pressTimer !== null) {{ clearTimeout(pressTimer); pressTimer = null; }}
+    if (pressChip) {{ pressChip.classList.toggle("is-pressing", false); pressChip = null; }}
   }}
 
   sourcesNav.addEventListener("pointerdown", (ev) => {{
-    if (ev.pointerType !== "touch" && ev.pointerType !== "pen") return;
+    // Anything that isn't a mouse. Some browsers report an empty pointerType,
+    // and treating those as touch is the safer failure.
+    if (ev.pointerType === "mouse") return;
     const chip = ev.target.closest(".chip.src");
     if (!chip) return;
 
     longPressed = false;
     cancelPress();
+    pressChip = chip;
+    pressX = ev.clientX || 0;
+    pressY = ev.clientY || 0;
+    chip.classList.toggle("is-pressing", true);
+
     pressTimer = setTimeout(() => {{
       pressTimer = null;
       longPressed = true;          // tells the click handler to stand down
+      if (pressChip) pressChip.classList.toggle("is-pressing", false);
+      pressChip = null;
       toggleExclude(chip.dataset.source);
       apply();
     }}, LONG_PRESS_MS);
   }});
 
-  for (const evt of ["pointerup", "pointercancel", "pointermove", "pointerleave"]) {{
+  // Only a real drag cancels. Cancelling on any pointermove at all meant the
+  // press never survived the tiny jitter of a finger resting on the glass.
+  sourcesNav.addEventListener("pointermove", (ev) => {{
+    if (pressTimer === null) return;
+    const dx = (ev.clientX || 0) - pressX;
+    const dy = (ev.clientY || 0) - pressY;
+    if (Math.hypot(dx, dy) > MOVE_TOLERANCE) cancelPress();
+  }});
+
+  for (const evt of ["pointerup", "pointercancel", "pointerleave"]) {{
     sourcesNav.addEventListener(evt, cancelPress);
   }}
 
