@@ -303,7 +303,8 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
             f'<p class="meta"><span class="source">{e(item.source)}</span>'
             f'<time datetime="{e(iso)}"{"" if item.dated else " data-undated=\"1\""}>'
             f'{e(item.published.strftime("%d %b %H:%M"))}</time>'
-            f'<button class="mark" type="button" title="Mark as read">✓</button></p>'
+            # Empty box; the tick is filled in by JS for read stories only.
+            f'<button class="mark" type="button" title="Mark as read"></button></p>'
             f"</li>"
         )
 
@@ -367,13 +368,16 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
      new without anything disappearing unless you ask for it. */
   .item.is-read {{ opacity: .5; }}
   .item.is-read .headline {{ font-weight: 500; color: var(--muted); }}
+  /* Fixed square so the box doesn't resize when the tick appears. */
   .mark {{
-    font: inherit; font-size: .8rem; line-height: 1; cursor: pointer;
-    margin-left: auto; padding: .15rem .4rem; border-radius: 5px;
+    font: inherit; font-size: .78rem; line-height: 1; cursor: pointer;
+    margin-left: auto; flex: none; width: 1.15rem; height: 1.15rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0; border-radius: 4px;
     background: none; border: 1px solid var(--line); color: var(--muted);
   }}
   .mark:hover {{ border-color: var(--accent); color: var(--accent); }}
-  .item.is-read .mark {{ background: var(--chip); }}
+  .item.is-read .mark {{ color: var(--accent); border-color: var(--accent); }}
   .count {{ opacity: .55; margin-left: .35rem; font-variant-numeric: tabular-nums; }}
   .chip.link {{
     background: none; color: var(--muted); text-decoration: underline;
@@ -512,6 +516,7 @@ def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
       item.hidden = !ok;
       item.classList.toggle("is-read", isRead);
       const mark = item.querySelector(".mark");
+      mark.textContent = isRead ? "✓" : "";
       mark.title = isRead ? "Mark as unread" : "Mark as read";
       if (ok) shown++;
       // Unread count tracks the source filter but ignores the unread toggle —

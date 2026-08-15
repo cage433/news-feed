@@ -167,6 +167,8 @@ const unread = () => Number(unreadCount.textContent);
 const fire = (el) => { for (const fn of list._handlers) fn({ target: el }); };
 
 check("preseeded story loads as read", PRESEEDED.classList.contains("is-read"), true);
+check("its box loads already ticked", PRESEEDED._mark.textContent, "✓");
+check("unread boxes start empty", items[0]._mark.textContent, "");
 check("unread count excludes it", unread(), TOTAL - 1);
 check("read story still shown when not filtering", PRESEEDED.hidden, false);
 
@@ -183,8 +185,10 @@ const other = items[1];
 fire(other._mark);
 check("tick marks read", other.classList.contains("is-read"), true);
 check("tick updates its own title", other._mark.title, "Mark as unread");
+check("box shows a tick when read", other._mark.textContent, "✓");
 fire(other._mark);
 check("tick marks unread again", other.classList.contains("is-read"), false);
+check("box is empty when unread", other._mark.textContent, "");
 check("unread count restored", unread(), TOTAL - 2);
 
 // unread-only hides stories read earlier, but keeps this session's in place
