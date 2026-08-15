@@ -158,8 +158,14 @@ def fetch(feed: Feed) -> tuple[Feed, list[Item], str | None, str | None]:
         if status and status >= 400:
             return feed, [], f"HTTP {status}", None   # 404/403 won't fix itself
         if not parsed.entries:
+            # feedparser doesn't raise on network failures — it returns an
+            # empty feed with bozo_exception set. Those are worth retrying;
+            # a genuinely empty but well-formed feed is not.
             reason = getattr(parsed, "bozo_exception", None)
-            return feed, [], (f"no entries ({reason})" if reason else "no entries"), None
+            if reason is not None:
+                problem = f"{type(reason).__name__}: {reason}"
+                continue
+            return feed, [], "no entries", None
         break
     else:
         return feed, [], problem, None
