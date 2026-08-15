@@ -248,6 +248,22 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
         for s in sections
     ]
 
+    # One toggle per source that actually produced stories, ordered by volume
+    # so the sources most worth muting sit first.
+    counts: dict[str, int] = {}
+    source_section: dict[str, str] = {}
+    for item in items:
+        counts[item.source] = counts.get(item.source, 0) + 1
+        source_section[item.source] = item.section
+    ranked = sorted(counts, key=lambda s: (-counts[s], s.lower()))
+
+    source_chips = [
+        f'<button class="chip src is-active" data-source="{e(slug(name))}" '
+        f'data-section="{e(slug(source_section[name]))}">'
+        f'{e(name)}<span class="count">{counts[name]}</span></button>'
+        for name in ranked
+    ]
+
     rows = []
     for item in items:
         iso = item.published.isoformat()
@@ -255,7 +271,8 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
             f'<p class="summary">{e(item.summary)}</p>' if item.summary else ""
         )
         rows.append(
-            f'<li class="item" data-section="{e(slug(item.section))}">'
+            f'<li class="item" data-section="{e(slug(item.section))}"'
+            f' data-source="{e(slug(item.source))}">'
             f'<a class="headline" href="{e(item.link)}" target="_blank" rel="noopener noreferrer">{e(item.title)}</a>'
             f'{summary}'
             f'<p class="meta"><span class="source">{e(item.source)}</span>'
@@ -304,6 +321,18 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
   }}
   .chip:hover {{ border-color: var(--line); }}
   .chip.is-active {{ background: var(--accent); color: #fff; }}
+  /* Source toggles read as on/off, so they invert: muted ones go faint
+     rather than the selected one going solid. */
+  .sources {{ margin-top: -.9rem; gap: .35rem; }}
+  .chip.src {{ font-size: .78rem; padding: .25rem .6rem; }}
+  .chip.src.is-active {{ background: var(--chip); color: var(--ink); }}
+  .chip.src:not(.is-active) {{ opacity: .4; text-decoration: line-through; }}
+  .chip.src[hidden] {{ display: none; }}
+  .count {{ opacity: .55; margin-left: .35rem; font-variant-numeric: tabular-nums; }}
+  .chip.link {{
+    background: none; color: var(--muted); text-decoration: underline;
+    padding: .25rem .4rem; font-size: .78rem;
+  }}
   ul {{ list-style: none; margin: 0; padding: 0; }}
   .item {{
     background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
@@ -332,17 +361,23 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
 <div class="wrap">
   <header>
     <h1>News Feed</h1>
-    <p class="built">{len(items)} stories · updated <time id="built" datetime="{e(built.isoformat())}">{e(built.strftime("%d %b %Y %H:%M UTC"))}</time></p>
+    <p class="built"><span id="shown">{len(items)}</span> stories · updated <time id="built" datetime="{e(built.isoformat())}">{e(built.strftime("%d %b %Y %H:%M UTC"))}</time></p>
   </header>
 
-  <nav class="filters">{"".join(chips)}</nav>
+  <nav class="filters" id="sections">{"".join(chips)}</nav>
+
+  <nav class="filters sources" id="sources">
+    {"".join(source_chips)}
+    <button class="chip link" id="toggle-all">none</button>
+  </nav>
 
   <ul id="list">
     {"".join(rows) or '<li class="empty">No stories found. Check the build log.</li>'}
   </ul>
 
   <footer>
-    <p>Built from {len(sections)} sections of RSS. Edit <code>feeds.txt</code> to change sources.</p>
+    <p>Click a source to mute it, shift-click to show only that one. Choices are
+       remembered in this browser. Edit <code>feeds.txt</code> to change sources.</p>
     {problems}
   </footer>
 </div>
@@ -368,15 +403,75 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
   }}
 
   const list = document.getElementById("list");
-  document.querySelector(".filters").addEventListener("click", (ev) => {{
+  const items = [...list.querySelectorAll(".item")];
+  const sourceChips = [...document.querySelectorAll(".chip.src")];
+  const countEl = document.getElementById("shown");
+  const toggleAll = document.getElementById("toggle-all");
+
+  // Filters survive a rebuild, so muting a source sticks across the day.
+  const saved = JSON.parse(localStorage.getItem("newsfeed-filters") || "{{}}");
+  let section = saved.section || "all";
+  const muted = new Set(saved.muted || []);
+
+  function apply() {{
+    let shown = 0;
+    for (const item of items) {{
+      const ok = (section === "all" || item.dataset.section === section)
+                 && !muted.has(item.dataset.source);
+      item.hidden = !ok;
+      if (ok) shown++;
+    }}
+
+    for (const c of document.querySelectorAll("#sections .chip")) {{
+      c.classList.toggle("is-active", c.dataset.filter === section);
+    }}
+    for (const c of sourceChips) {{
+      c.classList.toggle("is-active", !muted.has(c.dataset.source));
+      // Hide source toggles that can't apply under the current section.
+      c.hidden = section !== "all" && c.dataset.section !== section;
+    }}
+
+    const live = sourceChips.filter((c) => !c.hidden);
+    toggleAll.textContent = live.every((c) => muted.has(c.dataset.source)) ? "all" : "none";
+    countEl.textContent = shown;
+    localStorage.setItem("newsfeed-filters",
+      JSON.stringify({{ section, muted: [...muted] }}));
+  }}
+
+  document.getElementById("sections").addEventListener("click", (ev) => {{
     const chip = ev.target.closest(".chip");
     if (!chip) return;
-    for (const c of document.querySelectorAll(".chip")) c.classList.toggle("is-active", c === chip);
-    const want = chip.dataset.filter;
-    for (const item of list.querySelectorAll(".item")) {{
-      item.hidden = want !== "all" && item.dataset.section !== want;
-    }}
+    section = chip.dataset.filter;
+    apply();
   }});
+
+  document.getElementById("sources").addEventListener("click", (ev) => {{
+    const chip = ev.target.closest(".chip");
+    if (!chip) return;
+
+    if (chip === toggleAll) {{
+      const live = sourceChips.filter((c) => !c.hidden);
+      const turnOff = !live.every((c) => muted.has(c.dataset.source));
+      for (const c of live) {{
+        if (turnOff) muted.add(c.dataset.source);
+        else muted.delete(c.dataset.source);
+      }}
+    }} else if (chip.dataset.source) {{
+      // Plain click toggles one source; shift-click isolates it.
+      const src = chip.dataset.source;
+      if (ev.shiftKey) {{
+        muted.clear();
+        for (const c of sourceChips) if (c.dataset.source !== src) muted.add(c.dataset.source);
+      }} else if (muted.has(src)) {{
+        muted.delete(src);
+      }} else {{
+        muted.add(src);
+      }}
+    }}
+    apply();
+  }});
+
+  apply();
 </script>
 </body>
 </html>

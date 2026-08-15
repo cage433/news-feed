@@ -48,6 +48,16 @@ jobs:
       - name: Build page
         run: python build.py
 
+      # The page's JavaScript is embedded in a Python f-string, where a stray
+      # brace breaks it silently. This runs the real shipped script against a
+      # DOM stub, so a broken filter fails the build instead of the page.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Test filters
+        run: deno run --allow-read=. test_filters.js
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: out
