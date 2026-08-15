@@ -25,9 +25,7 @@ class El {
   click(shiftKey = false) {
     const ev = { target: this, shiftKey };
     // Bubble to the nav that owns this chip.
-    for (const nav of [sectionsNav, sourcesNav]) {
-      if (nav._children.includes(this)) for (const fn of nav._handlers) fn(ev);
-    }
+    if (sourcesNav._children.includes(this)) for (const fn of sourcesNav._handlers) fn(ev);
   }
   closest(sel) {
     if (sel === ".chip") return this._classes.has("chip") ? this : null;
@@ -36,21 +34,17 @@ class El {
 }
 
 // Build the DOM from the real generated markup.
-const items = [...html.matchAll(/<li class="item" data-section="([^"]+)" data-source="([^"]+)"/g)]
-  .map(([, section, source]) => new El("li", { section, source }, ["item"]));
+const items = [...html.matchAll(/<li class="item" data-source="([^"]+)"/g)]
+  .map(([, source]) => new El("li", { source }, ["item"]));
 
-const sectionChips = [...html.matchAll(/<button class="chip(?: is-active)?" data-filter="([^"]+)"/g)]
-  .map(([, filter]) => new El("button", { filter }, ["chip"]));
-
-const sourceChips = [...html.matchAll(/<button class="chip src" data-source="([^"]+)" data-section="([^"]+)"/g)]
-  .map(([, source, section]) => new El("button", { source, section }, ["chip", "src"]));
+const sourceChips = [...html.matchAll(/<button class="chip src" data-source="([^"]+)"/g)]
+  .map(([, source]) => new El("button", { source }, ["chip", "src"]));
 
 const times = [...html.matchAll(/<time datetime="([^"]+)"(\s+data-undated="1")?/g)]
   .map(([, datetime, undated]) => new El("time", undated ? { datetime, undated: "1" } : { datetime }));
 
 const clearBtn = new El("button", {}, ["chip", "link"]);
 const shown = new El("span", {});
-const sectionsNav = new El("nav", {}); sectionsNav._children = sectionChips;
 const sourcesNav = new El("nav", {}); sourcesNav._children = [...sourceChips, clearBtn];
 const list = new El("ul", {});
 
@@ -65,10 +59,9 @@ Object.defineProperty(globalThis, "localStorage", {
   },
 });
 globalThis.document = {
-  getElementById: (id) => ({ list, clear: clearBtn, shown, sections: sectionsNav, sources: sourcesNav }[id]),
+  getElementById: (id) => ({ list, clear: clearBtn, shown, sources: sourcesNav }[id]),
   querySelectorAll: (sel) => {
     if (sel === "time[datetime]") return times;
-    if (sel === "#sections .chip") return sectionChips;
     if (sel === ".chip.src") return sourceChips;
     throw new Error("unstubbed selector: " + sel);
   },
@@ -79,11 +72,10 @@ list.querySelectorAll = () => items;
 new Function(script)();
 
 const visible = () => items.filter((i) => !i.hidden).length;
-const bySection = (s) => items.filter((i) => i.dataset.section === s).length;
 const bySource = (s) => items.filter((i) => i.dataset.source === s).length;
 
 const TOTAL = items.length;
-console.log(`loaded ${TOTAL} items, ${sectionChips.length} section chips, ${sourceChips.length} source chips\n`);
+console.log(`loaded ${TOTAL} items, ${sourceChips.length} source chips\n`);
 
 check("initial: everything visible", visible(), TOTAL);
 check("initial: count element", Number(shown.textContent), TOTAL);
@@ -130,28 +122,18 @@ check("shift-click on the focused source drops focus and excludes it",
   visible(), TOTAL - bySource(a.dataset.source));
 a.click(true);
 
-// --- 'all' clears everything, section included
-const sec = sectionChips.find((c) => c.dataset.filter !== "all");
-const secName = sec.dataset.filter;
-sec.click();
-check("section filter narrows to that section", visible(), bySection(secName));
-check("irrelevant source chips hidden",
-  sourceChips.filter((c) => !c.hidden).every((c) => c.dataset.section === secName), true);
-
-const inSection = sourceChips.find((c) => !c.hidden);
-inSection.click(true);
-check("exclude inside a section subtracts only that source",
-  visible(), bySection(secName) - bySource(inSection.dataset.source));
-
+// --- 'all' clears every filter
+a.click(true);
+b.click(true);
+check("'all' visible while filtered", clearBtn.hidden, false);
 clearBtn.click();
-check("'all' clears source and section filters", visible(), TOTAL);
+check("'all' clears every filter", visible(), TOTAL);
 check("'all' hides itself again", clearBtn.hidden, true);
 
 // --- persistence
 a.click();
 const saved = JSON.parse(store["newsfeed-filters"]);
 check("focus persisted", saved.focus, a.dataset.source);
-check("section persisted", saved.section, "all");
 a.click(true);
 check("exclusion persisted",
   JSON.parse(store["newsfeed-filters"]).excluded, [a.dataset.source]);

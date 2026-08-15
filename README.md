@@ -10,12 +10,11 @@ to GitHub Pages.
 Edit `feeds.txt`. One line per feed:
 
 ```
-Section | Display name | Feed URL
+Display name | Feed URL
 ```
 
-Sections become the filter buttons at the top of the page. Lines starting with
-`#` are ignored, so you can park a source without deleting it. Commit and push;
-the page rebuilds on its own.
+Lines starting with `#` are ignored, so you can park a source without deleting
+it. Commit and push; the page rebuilds on its own.
 
 To find a site's feed URL, try `https://thesite.com/feed/` first — that covers
 most WordPress sites. Otherwise view the homepage source and look for
@@ -33,9 +32,28 @@ open out/index.html
 ## How it works
 
 `build.py` fetches every feed in parallel, merges the entries into one
-reverse-chronological list, drops anything older than three weeks, de-duplicates
-by link, and writes `out/index.html`. That file is self-contained — no external
-CSS, fonts, or scripts — so it works offline and loads instantly.
+reverse-chronological list, drops anything older than `MAX_AGE_DAYS`,
+de-duplicates by link, and writes `out/index.html`. That file is
+self-contained — no external CSS, fonts, or scripts — so it works offline and
+loads instantly.
+
+## How long stories stay on the page
+
+Each build starts from scratch: there is no archive. A story is on the page only
+while it is *both* still in the publisher's own feed and newer than
+`MAX_AGE_DAYS` (currently 21). Whichever runs out first wins, and which one that
+is varies enormously by publisher:
+
+- **CounterPunch** carries 15 items spanning about **1.6 days**. Its own feed is
+  the limit; the age cutoff never comes into play.
+- **Electronic Intifada** and **Venezuelanalysis** hold roughly 3 weeks, so the
+  two limits land in about the same place.
+- **Media Lens** posts rarely — its 10 items stretch back 5 months, so the
+  21-day cutoff hides almost all of them.
+
+Raising `MAX_AGE_DAYS` surfaces more from the slow, low-volume sources and has
+no effect at all on the fast ones. Nothing can extend a fast source's window
+short of storing entries between builds.
 
 A feed that fails does not fail the build; it's listed in the page footer
 instead. The build only exits non-zero if *every* feed fails, which prevents a

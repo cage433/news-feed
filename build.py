@@ -46,13 +46,11 @@ class Item:
     published: datetime
     summary: str
     source: str
-    section: str
     dated: bool = True  # False when the feed gave no date and we stamped first-seen
 
 
 @dataclass
 class Feed:
-    section: str
     name: str
     url: str
 
@@ -64,8 +62,10 @@ def read_feeds() -> list[Feed]:
         if not line or line.startswith("#"):
             continue
         parts = [p.strip() for p in line.split("|")]
-        if len(parts) != 3:
-            print(f"feeds.txt:{lineno}: expected 'Section | Name | URL', skipping", file=sys.stderr)
+        if len(parts) == 3:
+            parts = parts[1:]  # tolerate the old 'Section | Name | URL' format
+        if len(parts) != 2:
+            print(f"feeds.txt:{lineno}: expected 'Name | URL', skipping", file=sys.stderr)
             continue
         feeds.append(Feed(*parts))
     return feeds
@@ -160,7 +160,7 @@ def fetch(feed: Feed) -> tuple[Feed, list[Item], str | None]:
         )
         # `published` stays None for undated entries; collect() stamps them
         # with the date we first saw them.
-        items.append(Item(title, link, when, summary, feed.name, feed.section,
+        items.append(Item(title, link, when, summary, feed.name,
                           dated=when is not None))
 
     if not items and newest is not None:
@@ -238,28 +238,19 @@ def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
-def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]) -> str:
+def render(items: list[Item], errors: list[tuple[str, str]]) -> str:
     e = html.escape
     built = datetime.now(timezone.utc)
 
-    chips = ['<button class="chip is-active" data-filter="all">All</button>']
-    chips += [
-        f'<button class="chip" data-filter="{e(slug(s))}">{e(s)}</button>'
-        for s in sections
-    ]
-
-    # One toggle per source that actually produced stories, ordered by volume
-    # so the sources most worth muting sit first.
+    # One chip per source that actually produced stories, ordered by volume
+    # so the sources most worth filtering sit first.
     counts: dict[str, int] = {}
-    source_section: dict[str, str] = {}
     for item in items:
         counts[item.source] = counts.get(item.source, 0) + 1
-        source_section[item.source] = item.section
     ranked = sorted(counts, key=lambda s: (-counts[s], s.lower()))
 
     source_chips = [
-        f'<button class="chip src" data-source="{e(slug(name))}" '
-        f'data-section="{e(slug(source_section[name]))}">'
+        f'<button class="chip src" data-source="{e(slug(name))}">'
         f'{e(name)}<span class="count">{counts[name]}</span></button>'
         for name in ranked
     ]
@@ -271,8 +262,7 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
             f'<p class="summary">{e(item.summary)}</p>' if item.summary else ""
         )
         rows.append(
-            f'<li class="item" data-section="{e(slug(item.section))}"'
-            f' data-source="{e(slug(item.source))}">'
+            f'<li class="item" data-source="{e(slug(item.source))}">'
             f'<a class="headline" href="{e(item.link)}" target="_blank" rel="noopener noreferrer">{e(item.title)}</a>'
             f'{summary}'
             f'<p class="meta"><span class="source">{e(item.source)}</span>'
@@ -320,11 +310,10 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
     padding: .3rem .8rem;
   }}
   .chip:hover {{ border-color: var(--line); }}
-  .chip.is-active {{ background: var(--accent); color: #fff; }}
   /* Three states: focused (solid), excluded (struck through), and dimmed —
      the last for sources merely not focused, so a focus reads as one bright
      chip rather than eight rejected ones. */
-  .sources {{ margin-top: -.9rem; gap: .35rem; }}
+  .sources {{ gap: .35rem; }}
   .chip.src {{ font-size: .78rem; padding: .25rem .6rem; }}
   .chip.src.is-focus {{ background: var(--accent); color: #fff; }}
   .chip.src.is-focus .count {{ opacity: .75; }}
@@ -366,8 +355,6 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
     <h1>News Feed</h1>
     <p class="built"><span id="shown">{len(items)}</span> stories · updated <time id="built" datetime="{e(built.isoformat())}">{e(built.strftime("%d %b %Y %H:%M UTC"))}</time></p>
   </header>
-
-  <nav class="filters" id="sections">{"".join(chips)}</nav>
 
   <nav class="filters sources" id="sources">
     {"".join(source_chips)}
@@ -416,7 +403,6 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
   // `excluded` hides several. Focus wins while it's set — combining them
   // would let you focus a source and exclude it at the same time.
   const saved = JSON.parse(localStorage.getItem("newsfeed-filters") || "{{}}");
-  let section = saved.section || "all";
   let focus = saved.focus || null;
   const excluded = new Set(saved.excluded || []);
 
@@ -424,44 +410,30 @@ def render(items: list[Item], errors: list[tuple[str, str]], sections: list[str]
     let shown = 0;
     for (const item of items) {{
       const src = item.dataset.source;
-      const ok = (section === "all" || item.dataset.section === section)
-                 && (focus ? src === focus : !excluded.has(src));
+      const ok = focus ? src === focus : !excluded.has(src);
       item.hidden = !ok;
       if (ok) shown++;
     }}
 
-    for (const c of document.querySelectorAll("#sections .chip")) {{
-      c.classList.toggle("is-active", c.dataset.filter === section);
-    }}
     for (const c of sourceChips) {{
       const src = c.dataset.source;
       c.classList.toggle("is-focus", focus === src);
       c.classList.toggle("is-excluded", !focus && excluded.has(src));
       c.classList.toggle("is-dimmed", Boolean(focus) && focus !== src);
-      // Hide source chips that can't apply under the current section.
-      c.hidden = section !== "all" && c.dataset.section !== section;
     }}
 
     // Only offer "all" when there's actually something to clear.
-    clearBtn.hidden = section === "all" && !focus && excluded.size === 0;
+    clearBtn.hidden = !focus && excluded.size === 0;
     countEl.textContent = shown;
     localStorage.setItem("newsfeed-filters",
-      JSON.stringify({{ section, focus, excluded: [...excluded] }}));
+      JSON.stringify({{ focus, excluded: [...excluded] }}));
   }}
-
-  document.getElementById("sections").addEventListener("click", (ev) => {{
-    const chip = ev.target.closest(".chip");
-    if (!chip) return;
-    section = chip.dataset.filter;
-    apply();
-  }});
 
   document.getElementById("sources").addEventListener("click", (ev) => {{
     const chip = ev.target.closest(".chip");
     if (!chip) return;
 
     if (chip === clearBtn) {{
-      section = "all";
       focus = null;
       excluded.clear();
     }} else if (chip.dataset.source) {{
@@ -502,9 +474,8 @@ def main() -> int:
         print("Every feed failed — not overwriting the page.", file=sys.stderr)
         return 1
 
-    sections = list(dict.fromkeys(f.section for f in feeds))
     OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    OUT_FILE.write_text(render(items, errors, sections), encoding="utf-8")
+    OUT_FILE.write_text(render(items, errors), encoding="utf-8")
 
     print(f"Wrote {OUT_FILE} — {len(items)} items, {len(errors)} feeds unavailable", file=sys.stderr)
     return 0
