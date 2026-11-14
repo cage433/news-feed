@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>News Feed</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Ctext%20y%3D%27.95em%27%20font-size%3D%2792%27%3E%F0%9F%93%B0%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%20100%20100%27%3E%3Ctext%20y%3D%27.95em%27%20font-size%3D%2792%27%3E%F0%9F%93%B0%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #fbfaf8; --panel: #ffffff; --ink: #1b1a18; --muted: #6b6862;
+    --line: #e4e0d9; --accent: #8c2f24; --chip: #f1eee8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16151a; --panel: #1e1d23; --ink: #ece9e4; --muted: #9a958d;
+      --line: #302e37; --accent: #e0776a; --chip: #272630;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 46rem; margin: 0 auto; padding: 2rem 1.1rem 4rem; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 1rem; margin-bottom: 1.25rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .35rem; letter-spacing: -.01em; }
+  .built { color: var(--muted); font-size: .82rem; margin: 0; }
+  .filters { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1rem 0 1.5rem; }
+  .chip {
+    font: inherit; font-size: .85rem; cursor: pointer; color: var(--ink);
+    background: var(--chip); border: 1px solid transparent; border-radius: 999px;
+    padding: .3rem .8rem;
+    /* A long press excludes a source, so suppress the OS text-selection
+       callout that would otherwise fire at the same moment.
+       touch-action also drops the 300ms double-tap delay. */
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .chip:hover { border-color: var(--line); }
+  /* Three states: focused (solid), excluded (struck through), and dimmed —
+     the last for sources merely not focused, so a focus reads as one bright
+     chip rather than eight rejected ones. */
+  .sources { gap: .35rem; }
+  .chip.src { font-size: .78rem; padding: .25rem .6rem; }
+  .chip.src.is-focus { background: var(--accent); color: #fff; }
+  .chip.src.is-focus .count { opacity: .75; }
+  .chip.src.is-excluded { opacity: .38; text-decoration: line-through; }
+  .chip.src.is-dimmed { opacity: .45; }
+  /* Visible feedback while a long press is arming, so a hold that hasn't
+     registered yet is distinguishable from one that has. */
+  .chip.src.is-pressing { transform: scale(.92); opacity: .7; }
+  .chip.src {
+    transition: transform .12s ease, opacity .12s ease;
+    /* Not `manipulation`: that leaves the browser free to reinterpret the
+       touch as a page scroll, and Android fires pointercancel the moment it
+       starts considering that — killing the long press every time. `none`
+       claims touches on a chip outright. The row is a thin strip, so
+       scrolling elsewhere is unaffected. */
+    touch-action: none;
+  }
+  .chip.src[hidden], .chip.link[hidden] { display: none; }
+  .view { margin-top: -.9rem; }
+  #unread-only.is-active { background: var(--accent); color: #fff; }
+  /* Read stories stay on the page but recede, so the eye lands on what's
+     new without anything disappearing unless you ask for it. */
+  .item.is-read { opacity: .5; }
+  .item.is-read .headline { font-weight: 500; color: var(--muted); }
+  /* Fixed square so the box doesn't resize when the tick appears. */
+  .mark {
+    font: inherit; font-size: .78rem; line-height: 1; cursor: pointer;
+    margin-left: auto; flex: none; width: 1.15rem; height: 1.15rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0; border-radius: 4px;
+    /* Same colour whether ticked or not: the tick alone carries the state.
+       Using --line for the empty box made it invisible in dark mode, where
+       the border and the panel behind it are nearly the same value. */
+    background: none; border: 1px solid var(--accent); color: var(--accent);
+  }
+  .mark:hover { background: var(--chip); }
+  .count { opacity: .55; margin-left: .35rem; font-variant-numeric: tabular-nums; }
+  .chip.link {
+    background: none; color: var(--muted); text-decoration: underline;
+    padding: .25rem .4rem; font-size: .78rem;
+  }
+  footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+  .problems { color: var(--muted); font-size: .8rem; margin: 0; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  .item {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: .85rem 1rem; margin-bottom: .6rem;
+  }
+  .item[hidden] { display: none; }
+  .headline {
+    color: var(--ink); text-decoration: none; font-weight: 600;
+    font-size: 1.03rem; line-height: 1.35; display: block;
+  }
+  .headline:hover { color: var(--accent); text-decoration: underline; }
+  .summary { color: var(--muted); font-size: .9rem; margin: .35rem 0 0; }
+  .meta {
+    display: flex; gap: .5rem; align-items: baseline;
+    margin: .5rem 0 0; font-size: .78rem; color: var(--muted);
+  }
+  .source { font-weight: 600; color: var(--accent); }
+  .meta time::before { content: "·"; margin-right: .5rem; }
+  .empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>News Feed</h1>
+    <p class="built"><span id="shown">86</span> stories ·
+       <span id="unread">0</span> unread · updated
+       <time id="built" datetime="2026-11-14T22:09:24.717532+00:00">14 Nov 2026 22:09 UTC</time></p>
+  </header>
+
+  <nav class="filters sources" id="sources">
+    <button class="chip src" data-source="aaron-mat">Aaron Maté<span class="count">5</span></button><button class="chip src" data-source="breakthrough-news">Breakthrough News<span class="count">8</span></button><button class="chip src" data-source="cosmonaut">Cosmonaut<span class="count">10</span></button><button class="chip src" data-source="critique-of-crisis-theory">Critique of Crisis Theory<span class="count">1</span></button><button class="chip src" data-source="electronic-intifada">Electronic Intifada<span class="count">20</span></button><button class="chip src" data-source="gabriel-rockhill">Gabriel Rockhill<span class="count">4</span></button><button class="chip src" data-source="media-lens">Media Lens<span class="count">1</span></button><button class="chip src" data-source="mintpress-news">MintPress News<span class="count">1</span></button><button class="chip src" data-source="monthly-review">Monthly Review<span class="count">1</span></button><button class="chip src" data-source="norman-finkelstein">Norman Finkelstein<span class="count">3</span></button><button class="chip src" data-source="venezuelanalysis">Venezuelanalysis<span class="count">11</span></button><button class="chip src" data-source="vijay-prashad">Vijay Prashad<span class="count">7</span></button><button class="chip src" data-source="weekly-worker">Weekly Worker<span class="count">10</span></button><button class="chip src" data-source="where-s-your-ed-at">Where&#x27;s Your Ed At<span class="count">4</span></button>
+    <button class="chip link" id="clear" hidden>all</button>
+  </nav>
+
+  <nav class="filters view">
+    <button class="chip" id="unread-only" type="button">unread only</button>
+    <button class="chip link" id="mark-all" type="button">mark all read</button>
+  </nav>
+
+  <ul id="list">
+    <li class="item" data-source="venezuelanalysis" data-id="https://venezuelanalysis.com/interviews/aldo-torres-for-every-barrel-of-oil-extracted-a-venezuelan-household-is-left-in-the-dark"><a class="headline" href="https://venezuelanalysis.com/interviews/aldo-torres-for-every-barrel-of-oil-extracted-a-venezuelan-household-is-left-in-the-dark/" target="_blank" rel="noopener noreferrer">Aldo Torres: ‘For Every Barrel of Oil Extracted, a Venezuelan Household Is Left in the Dark’</a><p class="summary">Aldo Torres is a longtime trade union leader in the electricity sector and currently serves as executive secretary of the Venezuelan Federation of Electricity Industry Workers (FETRAELEC). In this interview, he…</p><p class="meta"><span class="source">Venezuelanalysis</span><time datetime="2026-11-14T14:00:00+00:00">14 Nov 14:00</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="vijay-prashad" data-id="https://luciddialectics.substack.com/p/headscarf"><a class="headline" href="https://luciddialectics.substack.com/p/headscarf" target="_blank" rel="noopener noreferrer">Headscarf</a><p class="summary">A poem</p><p class="meta"><span class="source">Vijay Prashad</span><time datetime="2026-11-14T12:55:19+00:00">14 Nov 12:55</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/content/another-olive-harvest-season-rock-bottom/51758"><a class="headline" href="https://electronicintifada.net/content/another-olive-harvest-season-rock-bottom/51758" target="_blank" rel="noopener noreferrer">Another olive harvest season at rock bottom</a><p class="summary">Israel’s genocide has decimated olive cultivation in Gaza, reducing the number of olive trees from two million to 150,000.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-14T09:12:30+00:00">14 Nov 09:12</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="venezuelanalysis" data-id="https://venezuelanalysis.com/news/venezuela-and-brazil-to-relaunch-bilateral-relations-demand-climate-action"><a class="headline" href="https://venezuelanalysis.com/news/venezuela-and-brazil-to-relaunch-bilateral-relations-demand-climate-action/" target="_blank" rel="noopener noreferrer">Venezuela and Brazil to ‘Relaunch’ Bilateral Relations, Demand Climate Action</a><p class="summary">Mérida, November 13, 2026 (venezuelanalysis.com) – Venezuelan Acting President Delcy Rodríguez and Brazilian President Luiz Inácio Lula da Silva held a bilateral meeting on the sidelines of the United Nations Climate…</p><p class="meta"><span class="source">Venezuelanalysis</span><time datetime="2026-11-13T19:22:00+00:00">13 Nov 19:22</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="cosmonaut" data-id="http://cosmonautmag.com/2026/11/letter-give-me-a-break"><a class="headline" href="http://cosmonautmag.com/2026/11/letter-give-me-a-break" target="_blank" rel="noopener noreferrer">Letter: Give Me a Break</a><p class="summary">John Haywood gives a pessimistic assessment of the US left in light of the 2026 Midterms.</p><p class="meta"><span class="source">Cosmonaut</span><time datetime="2026-11-13T19:05:15+00:00">13 Nov 19:05</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="breakthrough-news" data-id="https://breakthroughnews.org/2026/11/13/ice-is-hiding-detainees-from-their-families-and-the-death-toll-is-rising"><a class="headline" href="https://breakthroughnews.org/2026/11/13/ice-is-hiding-detainees-from-their-families-and-the-death-toll-is-rising/" target="_blank" rel="noopener noreferrer">ICE is hiding detainees from their families – and the death toll is rising</a><p class="summary">ICE just scrubbed tens of thousands of people from its Online Detainee Locator System, leaving their families and legal teams in the dark.</p><p class="meta"><span class="source">Breakthrough News</span><time datetime="2026-11-13T11:54:56+00:00">13 Nov 11:54</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="breakthrough-news" data-id="https://breakthroughnews.org/2026/11/13/call-of-duty-modern-warfare-4-propaganda-for-us-war-in-korea"><a class="headline" href="https://breakthroughnews.org/2026/11/13/call-of-duty-modern-warfare-4-propaganda-for-us-war-in-korea/" target="_blank" rel="noopener noreferrer">Call of Duty: Modern Warfare 4 | Propaganda for US war in Korea?</a><p class="summary">The new Call of Duty: Modern Warfare 4 just dropped, and it&#x27;s already mired in controversy.</p><p class="meta"><span class="source">Breakthrough News</span><time datetime="2026-11-13T10:41:47+00:00">13 Nov 10:41</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="where-s-your-ed-at" data-id="https://www.wheresyoured.at/hg-megaspeed"><a class="headline" href="https://www.wheresyoured.at/hg-megaspeed/" target="_blank" rel="noopener noreferrer">Premium: The Hater’s Guide To Megaspeed</a><p class="summary">Editor’s Note: The following situation is extremely fast-moving and it’s likely that more information gets reported both after I finish writing it and after it goes to press. As a result, the story may change in…</p><p class="meta"><span class="source">Where&#x27;s Your Ed At</span><time datetime="2026-11-13T10:19:39+00:00">13 Nov 10:19</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="breakthrough-news" data-id="https://breakthroughnews.org/2026/11/13/congolese-president-signs-referendum-bill-that-could-allow-for-a-third-term"><a class="headline" href="https://breakthroughnews.org/2026/11/13/congolese-president-signs-referendum-bill-that-could-allow-for-a-third-term/" target="_blank" rel="noopener noreferrer">Congolese president signs referendum bill that could allow for a third-term</a><p class="summary">DR Congo President Félix Tshisekedi has signed a controversial referendum law with growing opposition to proposed constitutional changes that critics fear could allow him to seek a third term beyond 2028. The move…</p><p class="meta"><span class="source">Breakthrough News</span><time datetime="2026-11-13T10:02:37+00:00">13 Nov 10:02</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="breakthrough-news" data-id="https://breakthroughnews.org/2026/11/13/keytruda-was-built-on-public-science-why-does-merck-own-the-rewards"><a class="headline" href="https://breakthroughnews.org/2026/11/13/keytruda-was-built-on-public-science-why-does-merck-own-the-rewards/" target="_blank" rel="noopener noreferrer">Keytruda was built on public science. Why does Merck own the rewards?</a><p class="summary">The world’s top-selling cancer drug is a scientific triumph. It is also a warning about what happens when publicly funded knowledge is turned into a private monopoly.</p><p class="meta"><span class="source">Breakthrough News</span><time datetime="2026-11-13T09:12:18+00:00">13 Nov 09:12</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/content/gazan-medics-detained-shift-tortured-and-return-work/51762"><a class="headline" href="https://electronicintifada.net/content/gazan-medics-detained-shift-tortured-and-return-work/51762" target="_blank" rel="noopener noreferrer">Gazan medics detained on shift, tortured – and return to work</a><p class="summary">Kidnapping of healthcare workers by Israel is a deliberate part of an attempt to “dismantle Palestinians&#x27;” capacity to provide care.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-13T02:42:44+00:00">13 Nov 02:42</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="weekly-worker" data-id="http://weeklyworker.co.uk/worker/1609/see-us-home"><a class="headline" href="http://weeklyworker.co.uk/worker/1609/see-us-home/" target="_blank" rel="noopener noreferrer">See us home</a><p class="meta"><span class="source">Weekly Worker</span><time datetime="2026-11-13T02:36:36.145947+00:00" data-undated="1">13 Nov 02:36</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="weekly-worker" data-id="http://weeklyworker.co.uk/worker/1609/online-communist-forum-sunday-november-15-5pm"><a class="headline" href="http://weeklyworker.co.uk/worker/1609/online-communist-forum-sunday-november-15-5pm/" target="_blank" rel="noopener noreferrer">Online Communist Forum, Sunday November 15 5pm</a><p class="meta"><span class="source">Weekly Worker</span><time datetime="2026-11-13T02:36:36.145947+00:00" data-undated="1">13 Nov 02:36</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="weekly-worker" data-id="http://weeklyworker.co.uk/worker/1609/strikes-streets-and-strategy"><a class="headline" href="http://weeklyworker.co.uk/worker/1609/strikes-streets-and-strategy/" target="_blank" rel="noopener noreferrer">Strikes, streets and strategy</a><p class="summary">There have been massive protests of school and university students. November 5 took things to a higher level by mobilising the trade unions. What needs to happen next? Jean Laurel argues against the idea that rioting is…</p><p class="meta"><span class="source">Weekly Worker</span><time datetime="2026-11-13T02:36:36.145947+00:00" data-undated="1">13 Nov 02:36</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="weekly-worker" data-id="http://weeklyworker.co.uk/worker/1609/dancing-the-word"><a class="headline" href="http://weeklyworker.co.uk/worker/1609/dancing-the-word/" target="_blank" rel="noopener noreferrer">Dancing the word</a><p class="summary">Jack Conrad reviews Chris Knight and Jerome Lewis The revolutionary origins of language New Haven CT 2026, pp384, hbk £25</p><p class="meta"><span class="source">Weekly Worker</span><time datetime="2026-11-13T02:36:36.145947+00:00" data-undated="1">13 Nov 02:36</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="weekly-worker" data-id="http://weeklyworker.co.uk/worker/1609/so-much-to-choose-from"><a class="headline" href="http://weeklyworker.co.uk/worker/1609/so-much-to-choose-from/" target="_blank" rel="noopener noreferrer">So much to choose from</a><p class="summary">Tam Dean Burn followed the ‘Culture’ stream. Walter Benjamin was very much mentioned. But what particularly struck him was the presentation given by Håkan Thörn and Carl Cassegård on postapocalyptic environmentalism</p><p class="meta"><span class="source">Weekly Worker</span><time datetime="2026-11-13T02:36:36.145947+00:00" data-undated="1">13 Nov 02:36</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="weekly-worker" data-id="http://weeklyworker.co.uk/worker/1609/grappling-with-digital-speed"><a class="headline" href="http://weeklyworker.co.uk/worker/1609/grappling-with-digital-speed/" target="_blank" rel="noopener noreferrer">Grappling with digital speed</a><p class="summary">Yassamine Mather dipped into the sessions on imperialism and Iran. The second session she attended was not only poorly presented, but the politics were awful. So, instead, she took to the ‘AI and capitalism’ stream. It…</p><p class="meta"><span class="source">Weekly Worker</span><time datetime="2026-11-13T02:36:36.145947+00:00" data-undated="1">13 Nov 02:36</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="weekly-worker" data-id="http://weeklyworker.co.uk/worker/1609/slaverys-imperial-apologists"><a class="headline" href="http://weeklyworker.co.uk/worker/1609/slaverys-imperial-apologists/" target="_blank" rel="noopener noreferrer">Slavery’s imperial apologists</a><p class="summary">Charles Windsor has not apologised for Britain’s role in Caribbean slavery. Nor has Andy Burnham. Mike Macnair says the official arguments against apologies and reparations are bogus. But to really right the wrongs of…</p><p class="meta"><span class="source">Weekly Worker</span><time datetime="2026-11-13T02:36:36.145947+00:00" data-undated="1">13 Nov 02:36</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="weekly-worker" data-id="http://weeklyworker.co.uk/worker/1609/low-expectations"><a class="headline" href="http://weeklyworker.co.uk/worker/1609/low-expectations/" target="_blank" rel="noopener noreferrer">Low expectations</a><p class="summary">Reportedly, it was the economy that sank Trump and the Republicans in the midterms … that and the unpopular Iran war. Yet, even with a clear majority in both houses, the Democrats are not going to bring about major…</p><p class="meta"><span class="source">Weekly Worker</span><time datetime="2026-11-13T02:36:36.145947+00:00" data-undated="1">13 Nov 02:36</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="weekly-worker" data-id="http://weeklyworker.co.uk/worker/1609/setting-terms-in-congress"><a class="headline" href="http://weeklyworker.co.uk/worker/1609/setting-terms-in-congress/" target="_blank" rel="noopener noreferrer">Setting terms in Congress</a><p class="summary">Democrats won more convincingly than expected in the midterms, and the DSA now has its eight-strong Bloc in Congress. There is also talk of a presidential run by Alexandria Ocasio-Cortez. How to navigate the coming…</p><p class="meta"><span class="source">Weekly Worker</span><time datetime="2026-11-13T02:36:36.145947+00:00" data-undated="1">13 Nov 02:36</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="weekly-worker" data-id="http://weeklyworker.co.uk/worker/1609/celebrity-culture-in-the-dock"><a class="headline" href="http://weeklyworker.co.uk/worker/1609/celebrity-culture-in-the-dock/" target="_blank" rel="noopener noreferrer">Celebrity culture in the dock</a><p class="summary">With the conviction of Russell Brand on one count of rape and three of sexual assault, and now the David Walliams allegations, Paul Demarty calls for self-critical reflection on the left and a healthier, more…</p><p class="meta"><span class="source">Weekly Worker</span><time datetime="2026-11-13T02:36:36.145947+00:00" data-undated="1">13 Nov 02:36</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/blogs/david-cronin/eu-buddies-israels-weapons-industry"><a class="headline" href="https://electronicintifada.net/blogs/david-cronin/eu-buddies-israels-weapons-industry" target="_blank" rel="noopener noreferrer">EU buddies up with Israel&#x27;s weapons industry</a><p class="summary">Firm that plays “pivotal role” in Gaza war sponsors lobbying summit.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-13T00:01:14+00:00">13 Nov 00:01</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="breakthrough-news" data-id="https://breakthroughnews.org/2026/11/13/dprk-throws-cold-water-on-trumps-summit-hopes"><a class="headline" href="https://breakthroughnews.org/2026/11/13/dprk-throws-cold-water-on-trumps-summit-hopes/" target="_blank" rel="noopener noreferrer">DPRK throws cold water on Trump’s summit hopes</a><p class="summary">&#x27;We have no need to sit face to face with such unreliable and hostile persons,’ Kim Yo Jong said in a statement on November 4.</p><p class="meta"><span class="source">Breakthrough News</span><time datetime="2026-11-12T18:45:24+00:00">12 Nov 18:45</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="cosmonaut" data-id="http://cosmonautmag.com/2026/11/revisionism-in-the-face-of-genocide"><a class="headline" href="http://cosmonautmag.com/2026/11/revisionism-in-the-face-of-genocide" target="_blank" rel="noopener noreferrer">Revisionism in the Face of Genocide</a><p class="summary">Reviewing Étienne Balibar&#x27;s Palestine, face au génocide, Lodwick Janssen finds a former critic of bourgeois ideology retreating into liberal hand-wringing and rights-based obfuscations when confronted with the…</p><p class="meta"><span class="source">Cosmonaut</span><time datetime="2026-11-12T17:57:01+00:00">12 Nov 17:57</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="venezuelanalysis" data-id="https://venezuelanalysis.com/opinion/there-will-soon-be-elections-in-venezuela"><a class="headline" href="https://venezuelanalysis.com/opinion/there-will-soon-be-elections-in-venezuela/" target="_blank" rel="noopener noreferrer">There Will Soon Be Elections in Venezuela</a><p class="summary">1 Everything is going according to the plan of the “foreign sentinel.”(1) One could almost add that the current scenario resembles that of the late twentieth century, when Venezuelan society decided that the best option…</p><p class="meta"><span class="source">Venezuelanalysis</span><time datetime="2026-11-12T15:28:00+00:00">12 Nov 15:28</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="breakthrough-news" data-id="https://breakthroughnews.org/2026/11/12/trump-renews-designation-of-nicaragua-as-an-extraordinary-threat"><a class="headline" href="https://breakthroughnews.org/2026/11/12/trump-renews-designation-of-nicaragua-as-an-extraordinary-threat/" target="_blank" rel="noopener noreferrer">Trump renews designation of Nicaragua as an ‘extraordinary threat’</a><p class="summary">The real strategic threat to the United States is Nicaragua’s ability to improve the lives of its citizens while maintaining a strong economy, despite Washington’s best efforts to prevent it.</p><p class="meta"><span class="source">Breakthrough News</span><time datetime="2026-11-12T15:15:21+00:00">12 Nov 15:15</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="breakthrough-news" data-id="https://breakthroughnews.org/2026/11/12/israel-resumes-its-lethal-assaults-on-gazas-healthcare-with-new-massacre-at-nasser-medical-complex"><a class="headline" href="https://breakthroughnews.org/2026/11/12/israel-resumes-its-lethal-assaults-on-gazas-healthcare-with-new-massacre-at-nasser-medical-complex/" target="_blank" rel="noopener noreferrer">Israel resumes its lethal assaults on Gaza’s healthcare with new massacre at Nasser Medical complex</a><p class="summary">The health facility was subjected to several airstrikes, raids, and sieges during Israel’s genocidal aggression on Gaza, which has now entered its fourth year.</p><p class="meta"><span class="source">Breakthrough News</span><time datetime="2026-11-12T13:40:28+00:00">12 Nov 13:40</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="breakthrough-news" data-id="https://breakthroughnews.org/2026/11/12/ex-partner-of-powerful-far-right-latin-american-political-operator-receives-asylum-in-mexico"><a class="headline" href="https://breakthroughnews.org/2026/11/12/ex-partner-of-powerful-far-right-latin-american-political-operator-receives-asylum-in-mexico/" target="_blank" rel="noopener noreferrer">Ex-partner of powerful far-right Latin American political operator receives asylum in Mexico</a><p class="summary">Nadia Beller accused the powerful political operator Fernando Cerimedo of attempting to murder her and of other crimes that link him to the highest echelons of power within the region’s far-right.</p><p class="meta"><span class="source">Breakthrough News</span><time datetime="2026-11-12T12:53:02+00:00">12 Nov 12:53</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/blogs/tamara-nassar/most-violent-olive-harvest-record-west-bank"><a class="headline" href="https://electronicintifada.net/blogs/tamara-nassar/most-violent-olive-harvest-record-west-bank" target="_blank" rel="noopener noreferrer">Most violent olive harvest on record in the West Bank</a><p class="summary">Cherished tradition marked by death, theft and destruction.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-12T08:43:39+00:00">12 Nov 08:43</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="venezuelanalysis" data-id="https://venezuelanalysis.com/news/exxonmobil-returns-to-venezuela-as-israeli-firm-eyes-stake-in-venezuelan-oil-producer"><a class="headline" href="https://venezuelanalysis.com/news/exxonmobil-returns-to-venezuela-as-israeli-firm-eyes-stake-in-venezuelan-oil-producer/" target="_blank" rel="noopener noreferrer">ExxonMobil Returns to Venezuela as Israeli Firm Eyes Stake in Venezuelan Oil Producer</a><p class="summary">Caracas, November 11, 2026 (venezuelanalysis.com) – The acting Delcy Rodríguez government and ExxonMobil signed a memorandum of understanding on Monday as the oil giant prepares to return to Venezuela nearly two decades…</p><p class="meta"><span class="source">Venezuelanalysis</span><time datetime="2026-11-11T15:20:48+00:00">11 Nov 15:20</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/blogs/eli-gerzon/livestream-israeli-soldiers-leave-feces-condoms-west-bank-homes"><a class="headline" href="https://electronicintifada.net/blogs/eli-gerzon/livestream-israeli-soldiers-leave-feces-condoms-west-bank-homes" target="_blank" rel="noopener noreferrer">Livestream: Israeli soldiers leave feces, condoms in West Bank homes</a><p class="summary">Zena Al Tahhan on Israel’s ongoing genocide in the West Bank. Ali Abunimah reacts to the US midterm elections. Jon Elmer on the latest in the Strait of Hormuz.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-11T14:04:30+00:00">11 Nov 14:04</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/content/palestine-pictures-october-2026/51750"><a class="headline" href="https://electronicintifada.net/content/palestine-pictures-october-2026/51750" target="_blank" rel="noopener noreferrer">Palestine in Pictures: October 2026</a><p class="summary">A monthly digest of key developments in Palestine showcasing powerful images by photojournalists.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-11T10:22:20+00:00">11 Nov 10:22</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="cosmonaut" data-id="http://cosmonautmag.com/2026/11/letter-meaning-machines-and-activity"><a class="headline" href="http://cosmonautmag.com/2026/11/letter-meaning-machines-and-activity" target="_blank" rel="noopener noreferrer">Letter: Meaning, Machines, and Activity</a><p class="summary">Michael Muller responds to recent discourse regarding AI by bringing in the perspective of cultural-historical activity theory.</p><p class="meta"><span class="source">Cosmonaut</span><time datetime="2026-11-11T07:31:29+00:00">11 Nov 07:31</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/content/restoring-omari-library-act-resistance/51759"><a class="headline" href="https://electronicintifada.net/content/restoring-omari-library-act-resistance/51759" target="_blank" rel="noopener noreferrer">Restoring the Omari library is an act of resistance</a><p class="summary">Estimates suggest only a fifth of the library’s irreplaceable books and manuscripts survived Israel’s bombing of Gaza’s oldest mosque.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-11T06:30:37+00:00">11 Nov 06:30</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="vijay-prashad" data-id="https://luciddialectics.substack.com/p/poetry-as-journalism"><a class="headline" href="https://luciddialectics.substack.com/p/poetry-as-journalism" target="_blank" rel="noopener noreferrer">Poetry as Journalism</a><p class="summary">Note 1</p><p class="meta"><span class="source">Vijay Prashad</span><time datetime="2026-11-11T00:52:15+00:00">11 Nov 00:52</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="venezuelanalysis" data-id="https://venezuelanalysis.com/news/venezuelan-parliament-approves-law-to-open-electricity-sector-to-partial-privatization"><a class="headline" href="https://venezuelanalysis.com/news/venezuelan-parliament-approves-law-to-open-electricity-sector-to-partial-privatization/" target="_blank" rel="noopener noreferrer">Venezuelan Parliament Approves Law to Open Electricity Sector to Partial Privatization</a><p class="summary">Caracas, November 10, 2026 (venezuelanalysis.com) – The Venezuelan National Assembly approved on Tuesday a reform of the Organic Law of the Electrical System and Service to open the electrical grid to the private sector…</p><p class="meta"><span class="source">Venezuelanalysis</span><time datetime="2026-11-10T18:03:23+00:00">10 Nov 18:03</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="cosmonaut" data-id="http://cosmonautmag.com/2026/11/bukharin-in-beijing-part-2-china-and-state-capitalism"><a class="headline" href="http://cosmonautmag.com/2026/11/bukharin-in-beijing-part-2-china-and-state-capitalism" target="_blank" rel="noopener noreferrer">Bukharin in Beijing?, Part 2: China and State Capitalism</a><p class="summary">In part two of a two-part series, Gabriel Salter argues that it is Bukharin&#x27;s theory of state capitalism, not his prescriptions for socialist transition, that describes the trajectory of contemporary China. Read part…</p><p class="meta"><span class="source">Cosmonaut</span><time datetime="2026-11-10T15:51:22+00:00">10 Nov 15:51</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="gabriel-rockhill" data-id="https://gabrielrockhill.substack.com/p/rockhill-monville-ponce-de-leon-postmodern"><a class="headline" href="https://gabrielrockhill.substack.com/p/rockhill-monville-ponce-de-leon-postmodern" target="_blank" rel="noopener noreferrer">Rockhill, Monville, Ponce de León, “Postmodern French Theory &amp; the Compatible Left”</a><p class="summary">Dual Book Launch in NYC</p><p class="meta"><span class="source">Gabriel Rockhill</span><time datetime="2026-11-10T12:37:40+00:00">10 Nov 12:37</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/blogs/michael-f-brown/what-will-big-wins-democrats-actually-mean-palestine"><a class="headline" href="https://electronicintifada.net/blogs/michael-f-brown/what-will-big-wins-democrats-actually-mean-palestine" target="_blank" rel="noopener noreferrer">What will big wins by Democrats actually mean for Palestine?</a><p class="summary">Voters opposed Iran war and Israel relationship but change remains uncertain.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-10T12:36:20+00:00">10 Nov 12:36</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="aaron-mat" data-id="https://www.aaronmate.net/p/unwilling-to-admit-defeat-in-iran"><a class="headline" href="https://www.aaronmate.net/p/unwilling-to-admit-defeat-in-iran" target="_blank" rel="noopener noreferrer">Unwilling to admit defeat in Iran, Trump looks to Ukraine and Russia for peace</a><p class="summary">Aaron Mate is a reader-supported publication.</p><p class="meta"><span class="source">Aaron Maté</span><time datetime="2026-11-10T09:51:47+00:00">10 Nov 09:51</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/content/israel-laughs-catastrophic-gaza-floods/51756"><a class="headline" href="https://electronicintifada.net/content/israel-laughs-catastrophic-gaza-floods/51756" target="_blank" rel="noopener noreferrer">Israel laughs at catastrophic Gaza floods</a><p class="summary">Board of Peace conditions reconstruction on Hamas disarming while equating “victim with executioner.”</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-10T09:45:35+00:00">10 Nov 09:45</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="where-s-your-ed-at" data-id="https://www.wheresyoured.at/jensens-bizarre-adventure"><a class="headline" href="https://www.wheresyoured.at/jensens-bizarre-adventure/" target="_blank" rel="noopener noreferrer">Jensen&#x27;s Bizarre Adventure</a><p class="summary">If you liked this piece, you should subscribe to my premium newsletter, and you can subscribe on the following links: $70 a year , $18 a quarter , or $7 a month . In return, you get a weekly premium newsletter that…</p><p class="meta"><span class="source">Where&#x27;s Your Ed At</span><time datetime="2026-11-10T09:43:27+00:00">10 Nov 09:43</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="mintpress-news" data-id="https://www.mintpressnews.com/iran-strikes-back-as-the-us-launches-new-attacks-in-dramatic-escalation/291292"><a class="headline" href="https://www.mintpressnews.com/iran-strikes-back-as-the-us-launches-new-attacks-in-dramatic-escalation/291292/" target="_blank" rel="noopener noreferrer">Iran Strikes Back As The US Launches New Attacks In ‘Dramatic Escalation’</a><p class="summary">The US carried out a wave of airstrikes against sites in southern Iran on Sunday, prompting a stern response from the Islamic Revolutionary Guard Corps (IRGC). On the latest episode of The Target, Mint Press News’…</p><p class="meta"><span class="source">MintPress News</span><time datetime="2026-11-10T08:01:44+00:00">10 Nov 08:01</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/content/motherhood-time-massacres/51755"><a class="headline" href="https://electronicintifada.net/content/motherhood-time-massacres/51755" target="_blank" rel="noopener noreferrer">Motherhood at a time of massacres</a><p class="summary">As an exciting journey, I venture outside with my kids onto the street to smell the polluted air. We go back inside and not much has changed.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-10T07:11:30+00:00">10 Nov 07:11</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="media-lens" data-id="https://www.medialens.org/2026/the-art-of-not-taking-a-view-pay-attention-by-laura-kuenssberg"><a class="headline" href="https://www.medialens.org/2026/the-art-of-not-taking-a-view-pay-attention-by-laura-kuenssberg/" target="_blank" rel="noopener noreferrer">The Art Of Not Taking A View – ‘Pay Attention’ By Laura Kuenssberg</a><p class="summary">To be fair to Laura Kuenssberg, she admits that her new book, ‘Pay Attention’, is not ‘an academic tome’. (Kuenssberg, ‘Pay Attention’, Corsair, 2026, p.10). Even so, it beggars belief that someone who was BBC →</p><p class="meta"><span class="source">Media Lens</span><time datetime="2026-11-10T02:18:44+00:00">10 Nov 02:18</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="venezuelanalysis" data-id="https://venezuelanalysis.com/news/venezuela-rodriguez-praises-george-washingtons-legacy-in-plaza-reinauguration"><a class="headline" href="https://venezuelanalysis.com/news/venezuela-rodriguez-praises-george-washingtons-legacy-in-plaza-reinauguration/" target="_blank" rel="noopener noreferrer">Venezuela: Rodríguez Praises George Washington’s ‘Legacy’ in Plaza Reinauguration</a><p class="summary">Mérida, November 9, 2026 (venezuelanalysis.com) – The Venezuelan government publicly reinaugurated the George Washington Plaza in El Paraíso, southwestern Caracas, alongside the US embassy on Friday. The ceremony…</p><p class="meta"><span class="source">Venezuelanalysis</span><time datetime="2026-11-09T16:51:00+00:00">09 Nov 16:51</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="cosmonaut" data-id="http://cosmonautmag.com/2026/11/letter-iran-war-was-the-issue-leadership-is-the-same"><a class="headline" href="http://cosmonautmag.com/2026/11/letter-iran-war-was-the-issue-leadership-is-the-same" target="_blank" rel="noopener noreferrer">Letter: Iran War was the Issue, Leadership is the Same</a><p class="summary">Nathan Richardson argues that Democratic victories in the midterms will do little to change the fundamentals of US foreign policy while the same special interests and their funding streams hold the cards.</p><p class="meta"><span class="source">Cosmonaut</span><time datetime="2026-11-09T11:51:28+00:00">09 Nov 11:51</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="gabriel-rockhill" data-id="https://gabrielrockhill.substack.com/p/requiem-for-the-postmodern-left-feat"><a class="headline" href="https://gabrielrockhill.substack.com/p/requiem-for-the-postmodern-left-feat" target="_blank" rel="noopener noreferrer">Requiem for the Postmodern Left (feat. Aymeric Monville and Gabriel Rockhill)</a><p class="summary">Emancipations Podcast Discussion Hosted and Moderated by Daniel Tutt</p><p class="meta"><span class="source">Gabriel Rockhill</span><time datetime="2026-11-09T06:09:40+00:00">09 Nov 06:09</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="gabriel-rockhill" data-id="https://gabrielrockhill.substack.com/p/rockhill-monville-ponce-de-leon-postmodernism"><a class="headline" href="https://gabrielrockhill.substack.com/p/rockhill-monville-ponce-de-leon-postmodernism" target="_blank" rel="noopener noreferrer">Rockhill, Monville, Ponce de León, &quot;Postmodernism vs Marxism&quot;</a><p class="summary">Dual Book Launch at the Free Library of Philadelphia</p><p class="meta"><span class="source">Gabriel Rockhill</span><time datetime="2026-11-08T11:55:52+00:00">08 Nov 11:55</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="vijay-prashad" data-id="https://luciddialectics.substack.com/p/flood-in-gaza"><a class="headline" href="https://luciddialectics.substack.com/p/flood-in-gaza" target="_blank" rel="noopener noreferrer">Flood in Gaza</a><p class="summary">A small poem</p><p class="meta"><span class="source">Vijay Prashad</span><time datetime="2026-11-08T08:31:48+00:00">08 Nov 08:31</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/blogs/maureen-clare-murphy/winter-weather-floods-gaza-man-made-catastrophe"><a class="headline" href="https://electronicintifada.net/blogs/maureen-clare-murphy/winter-weather-floods-gaza-man-made-catastrophe" target="_blank" rel="noopener noreferrer">Winter weather floods Gaza in &quot;man-made&quot; catastrophe</a><p class="summary">Crisis was neither “unexpected nor unforeseen” amid international failure to end Israel’s genocide.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-07T12:35:54+00:00">07 Nov 12:35</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="aaron-mat" data-id="https://www.aaronmate.net/p/audio-democrats-won-the-anti-war"><a class="headline" href="https://www.aaronmate.net/p/audio-democrats-won-the-anti-war" target="_blank" rel="noopener noreferrer">Audio: Democrats won the anti-war vote over Iran, but risk losing it over Ukraine</a><p class="summary">Narrated version.</p><p class="meta"><span class="source">Aaron Maté</span><time datetime="2026-11-07T09:50:37+00:00">07 Nov 09:50</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="vijay-prashad" data-id="https://luciddialectics.substack.com/p/at-dawn-in-old-mombasa"><a class="headline" href="https://luciddialectics.substack.com/p/at-dawn-in-old-mombasa" target="_blank" rel="noopener noreferrer">At Dawn in Old Mombasa</a><p class="summary">A Poem (for you to read and for you to listen to me read)</p><p class="meta"><span class="source">Vijay Prashad</span><time datetime="2026-11-07T09:45:24+00:00">07 Nov 09:45</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="venezuelanalysis" data-id="https://venezuelanalysis.com/interviews/claudio-fermin-we-must-forge-a-consciousness-against-the-recolonization-of-venezuela"><a class="headline" href="https://venezuelanalysis.com/interviews/claudio-fermin-we-must-forge-a-consciousness-against-the-recolonization-of-venezuela/" target="_blank" rel="noopener noreferrer">Claudio Fermín: ‘We Must Forge a Consciousness Against the Recolonization of Venezuela’</a><p class="summary">Claudio Fermín is a university professor and veteran political leader in Venezuela. Cutting his political teeth with Acción Democrática (AD) party, he became Caracas’s first elected mayor (1990-93). He went on to become…</p><p class="meta"><span class="source">Venezuelanalysis</span><time datetime="2026-11-07T09:00:00+00:00">07 Nov 09:00</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="aaron-mat" data-id="https://www.aaronmate.net/p/democrats-won-the-anti-war-vote-over"><a class="headline" href="https://www.aaronmate.net/p/democrats-won-the-anti-war-vote-over" target="_blank" rel="noopener noreferrer">Democrats won the anti-war vote over Iran, but risk losing it over Ukraine</a><p class="summary">Trump’s deference to Israel and war on Iran cost Republicans control of Congress. With JD Vance already distancing himself from both, Democrats may find themselves vulnerable over Ukraine.</p><p class="meta"><span class="source">Aaron Maté</span><time datetime="2026-11-07T08:02:49+00:00">07 Nov 08:02</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="cosmonaut" data-id="http://cosmonautmag.com/2026/11/how-nyc-won-the-rent-freeze-organizing-before-through-and-against-a-socialist-executive"><a class="headline" href="http://cosmonautmag.com/2026/11/how-nyc-won-the-rent-freeze-organizing-before-through-and-against-a-socialist-executive" target="_blank" rel="noopener noreferrer">How NYC Won the Rent Freeze: Organizing Before, Through, and Against a Socialist Executive</a><p class="summary">Sam Alquila gives an organizer&#x27;s perspective on how NYC won its historic rent freeze, arguing that the tenant movement&#x27;s independence was crucial to navigating the zigs and zags of organizing in a complex ecosystem of…</p><p class="meta"><span class="source">Cosmonaut</span><time datetime="2026-11-06T08:54:13+00:00">06 Nov 08:54</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="where-s-your-ed-at" data-id="https://www.wheresyoured.at/premium-fault-lines"><a class="headline" href="https://www.wheresyoured.at/premium-fault-lines/" target="_blank" rel="noopener noreferrer">Premium: Fault Lines</a><p class="summary">I’ve generally avoided politics here and the few times that I have done so I’ve received a few pissy emails, but Tuesday night was a wonderful, abundant font of hope in what has been an unspeakably grim two years. We…</p><p class="meta"><span class="source">Where&#x27;s Your Ed At</span><time datetime="2026-11-06T08:44:41+00:00">06 Nov 08:44</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/blogs/nora-barrows-friedman/israeli-airstrikes-shred-children-destroy-gaza-school"><a class="headline" href="https://electronicintifada.net/blogs/nora-barrows-friedman/israeli-airstrikes-shred-children-destroy-gaza-school" target="_blank" rel="noopener noreferrer">Israeli airstrikes shred children, destroy Gaza school</a><p class="summary">Palestinians in occupied West Bank return to Hebron homes ransacked by Israeli soldiers.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-06T07:52:27+00:00">06 Nov 07:52</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/content/israels-arab-parties-hold-keys-power-little-else/51743"><a class="headline" href="https://electronicintifada.net/content/israels-arab-parties-hold-keys-power-little-else/51743" target="_blank" rel="noopener noreferrer">Israel’s Arab parties hold keys to power but little else</a><p class="summary">Palestinian turnout secures highest ever number of parliamentary seats</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-06T05:08:27+00:00">06 Nov 05:08</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="cosmonaut" data-id="http://cosmonautmag.com/2026/11/letter-from-vibe-coding-to-auf-einmal"><a class="headline" href="http://cosmonautmag.com/2026/11/letter-from-vibe-coding-to-auf-einmal" target="_blank" rel="noopener noreferrer">Letter: From &quot;Vibe Coding&quot; to &quot;Auf Einmal&quot;</a><p class="summary">Chang Nuo, a student from Linyi University, makes the case that ASI Vindicates Marx’s 1845 Theory of Simultaneous Revolution.</p><p class="meta"><span class="source">Cosmonaut</span><time datetime="2026-11-05T15:26:36+00:00">05 Nov 15:26</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="venezuelanalysis" data-id="https://venezuelanalysis.com/images/broken-agreements-the-struggle-of-venezuelan-small-scale-coffee-producers"><a class="headline" href="https://venezuelanalysis.com/images/broken-agreements-the-struggle-of-venezuelan-small-scale-coffee-producers/" target="_blank" rel="noopener noreferrer">Broken Agreements: The Struggle of Venezuelan Small-Scale Coffee Producers</a><p class="summary">Traveling through the Hilario Luna y Luna and Guarico parishes of the Morán municipality in Lara State means connecting with a land full of history, struggle, and resistance. It is also home to thousands of hard-working…</p><p class="meta"><span class="source">Venezuelanalysis</span><time datetime="2026-11-05T15:00:00+00:00">05 Nov 15:00</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="norman-finkelstein" data-id="https://normanfinkelstein.substack.com/p/how-the-intl-community-sold-out-gaza"><a class="headline" href="https://normanfinkelstein.substack.com/p/how-the-intl-community-sold-out-gaza" target="_blank" rel="noopener noreferrer">How the Intl. Community Sold Out Gaza &amp; Killed Itself in the Process (w/ Norm Finkelstein) | TCHR</a><p class="meta"><span class="source">Norman Finkelstein</span><time datetime="2026-11-05T10:57:41+00:00">05 Nov 10:57</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/content/exported-israel-pets-dutch-dogs-used-torture-palestinians/51737"><a class="headline" href="https://electronicintifada.net/content/exported-israel-pets-dutch-dogs-used-torture-palestinians/51737" target="_blank" rel="noopener noreferrer">Exported to Israel as pets, Dutch dogs used to torture Palestinians</a><p class="summary">Rights groups take Dutch government to court over “crazy dog industry.”</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-05T07:28:34+00:00">05 Nov 07:28</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/content/stuck-middle-gazas-passport-crisis/51739"><a class="headline" href="https://electronicintifada.net/content/stuck-middle-gazas-passport-crisis/51739" target="_blank" rel="noopener noreferrer">Stuck in the middle of Gaza’s passport crisis</a><p class="summary">Scholarships and jobs abroad are on hold indefinitely for passport seekers in Gaza.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-05T07:02:46+00:00">05 Nov 07:02</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/blogs/david-cronin/genocide-advocate-belongs-leonardos-business-empire"><a class="headline" href="https://electronicintifada.net/blogs/david-cronin/genocide-advocate-belongs-leonardos-business-empire" target="_blank" rel="noopener noreferrer">Genocide advocate belongs to Leonardo&#x27;s business empire</a><p class="summary">“Dramatic leap” in drone trade will be celebrated in Tel Aviv next week.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-05T00:18:15+00:00">05 Nov 00:18</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="venezuelanalysis" data-id="https://venezuelanalysis.com/news/us-pushing-for-permanent-venezuela-military-presence-new-york-times"><a class="headline" href="https://venezuelanalysis.com/news/us-pushing-for-permanent-venezuela-military-presence-new-york-times/" target="_blank" rel="noopener noreferrer">US Pushing for Permanent Venezuela Military Presence: New York Times</a><p class="summary">Caracas, November 4, 2026 (venezuelanalysis.com) – The Donald Trump administration is negotiating a Status of Forces Agreement (SOFA) with Venezuela that would lay the groundwork for a potential long-term US military…</p><p class="meta"><span class="source">Venezuelanalysis</span><time datetime="2026-11-04T17:11:00+00:00">04 Nov 17:11</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/blogs/michael-f-brown/will-trump-really-cut-military-aid-israel"><a class="headline" href="https://electronicintifada.net/blogs/michael-f-brown/will-trump-really-cut-military-aid-israel" target="_blank" rel="noopener noreferrer">Will Trump really cut military aid to Israel?</a><p class="summary">Verbally accosted by the US president, Senator-elect Abdul El-Sayed faces him down on military aid to Israel.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-04T13:25:15+00:00">04 Nov 13:25</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/content/humanitarian-aid-reaching-gazas-widows/51740"><a class="headline" href="https://electronicintifada.net/content/humanitarian-aid-reaching-gazas-widows/51740" target="_blank" rel="noopener noreferrer">Is humanitarian aid reaching Gaza&#x27;s widows?</a><p class="summary">Widows report being denied aid after their husbands&#x27; families claimed it as their own.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-04T13:03:20+00:00">04 Nov 13:03</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="cosmonaut" data-id="http://cosmonautmag.com/2026/11/attempts-toward-a-critique-of-organization-deviation-and-revision-ism"><a class="headline" href="http://cosmonautmag.com/2026/11/attempts-toward-a-critique-of-organization-deviation-and-revision-ism" target="_blank" rel="noopener noreferrer">Attempts toward a Critique of Organization, Deviation, and Revision(-ism)</a><p class="summary">Drawing on the theories of György Lukács, Joonatan Lackström examines the mechanisms internal to organizational life that lead to accommodation with capitalism through the institutionalization of a division between…</p><p class="meta"><span class="source">Cosmonaut</span><time datetime="2026-11-04T11:05:13+00:00">04 Nov 11:05</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="venezuelanalysis" data-id="https://venezuelanalysis.com/news/venezuela-foreign-minister-blanco-meets-trump-officials-touts-cooperation"><a class="headline" href="https://venezuelanalysis.com/news/venezuela-foreign-minister-blanco-meets-trump-officials-touts-cooperation/" target="_blank" rel="noopener noreferrer">Venezuela: Foreign Minister Blanco Meets Trump Officials, Touts ‘Cooperation’</a><p class="summary">Mérida, November 3, 2026 (venezuelanalysis.com) – Venezuelan Foreign Minister Oliver Blanco held meetings with US Secretary of State Marco Rubio and Treasury Secretary Scott Bessent during a trip to Washington, DC, on…</p><p class="meta"><span class="source">Venezuelanalysis</span><time datetime="2026-11-03T19:27:00+00:00">03 Nov 19:27</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="cosmonaut" data-id="http://cosmonautmag.com/2026/11/letter-when-social-relation-loses-its-meaning"><a class="headline" href="http://cosmonautmag.com/2026/11/letter-when-social-relation-loses-its-meaning" target="_blank" rel="noopener noreferrer">Letter: When &quot;Social Relation&quot; Loses its Meaning</a><p class="summary">Nicolas D. Villarreal responds point by point to Peter Ross, finding that his appeals to the social relations of wage labor and the unique role of the working class rest on assertions rather than explanation.</p><p class="meta"><span class="source">Cosmonaut</span><time datetime="2026-11-03T19:00:37+00:00">03 Nov 19:00</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="where-s-your-ed-at" data-id="https://www.wheresyoured.at/running-dry"><a class="headline" href="https://www.wheresyoured.at/running-dry/" target="_blank" rel="noopener noreferrer">Running Dry</a><p class="summary">If you haven’t subscribed to Where’s Your Ed At, now’s the best time. I’ve extended the sale — 10% off of the $70-a-year subscription for life ( click here! ) — for new subscribers for another week. It’s a</p><p class="meta"><span class="source">Where&#x27;s Your Ed At</span><time datetime="2026-11-03T09:16:20+00:00">03 Nov 09:16</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/blogs/eli-gerzon/livestream-germanys-repression-echoes-its-nazi-past"><a class="headline" href="https://electronicintifada.net/blogs/eli-gerzon/livestream-germanys-repression-echoes-its-nazi-past" target="_blank" rel="noopener noreferrer">Livestream: Germany&#x27;s repression echoes its Nazi past</a><p class="summary">Dror Dayan on his film about the ban on the Berlin Palestine conference. Ali Abunimah on Israeli elections. Jon Elmer on Ansarallah’s drones in Yemen.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-03T09:01:33+00:00">03 Nov 09:01</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="vijay-prashad" data-id="https://luciddialectics.substack.com/p/wag-the-dog"><a class="headline" href="https://luciddialectics.substack.com/p/wag-the-dog" target="_blank" rel="noopener noreferrer">Wag the Dog</a><p class="summary">A chronology</p><p class="meta"><span class="source">Vijay Prashad</span><time datetime="2026-11-02T21:37:32+00:00">02 Nov 21:37</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="venezuelanalysis" data-id="https://venezuelanalysis.com/news/venezuelan-armed-forces-bomb-eln-guerrilla-camp-reports"><a class="headline" href="https://venezuelanalysis.com/news/venezuelan-armed-forces-bomb-eln-guerrilla-camp-reports/" target="_blank" rel="noopener noreferrer">Venezuelan Armed Forces Bomb ELN Guerrilla Camp: Reports</a><p class="summary">Caracas, November 2, 2026 (venezuelanalysis.com) – The Venezuelan armed forces reportedly attacked a camp belonging to Colombia’s National Liberation Army (ELN) in the Pedro Camejo municipality, Apure State, on Friday…</p><p class="meta"><span class="source">Venezuelanalysis</span><time datetime="2026-11-02T15:31:10+00:00">02 Nov 15:31</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="electronic-intifada" data-id="https://electronicintifada.net/blogs/michael-f-brown/great-western-hope-israel-just-another-anti-palestinian-bigot"><a class="headline" href="https://electronicintifada.net/blogs/michael-f-brown/great-western-hope-israel-just-another-anti-palestinian-bigot" target="_blank" rel="noopener noreferrer">Great Western hope for Israel is just another anti-Palestinian bigot</a><p class="summary">Gadi Eisenkot looks to build a Zionist governing coalition that would freeze out Palestinian political parties.</p><p class="meta"><span class="source">Electronic Intifada</span><time datetime="2026-11-02T15:20:05+00:00">02 Nov 15:20</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="monthly-review" data-id="https://monthlyreview.org/forthcoming-grand-theft-capital"><a class="headline" href="https://monthlyreview.org/forthcoming-grand-theft-capital/" target="_blank" rel="noopener noreferrer">Hitting the mark: “Grand Theft Capital”, by Fred Magdoff and John Bellamy Foster</a><p class="summary">The latest, in The Guardian (and read on for the Adam Smith Institute&#x27;s miffed response): &quot;As the radical economists Fred Magdoff and John Bellamy Foster show in their new book, Grand Theft Capital: What Workers Should…</p><p class="meta"><span class="source">Monthly Review</span><time datetime="2026-11-02T11:06:43+00:00">02 Nov 11:06</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="cosmonaut" data-id="http://cosmonautmag.com/2026/11/the-midterms-the-speaker-vote-and-the-2028-trap"><a class="headline" href="http://cosmonautmag.com/2026/11/the-midterms-the-speaker-vote-and-the-2028-trap" target="_blank" rel="noopener noreferrer">The Midterms, the Speaker Vote, and the 2028 Trap</a><p class="summary">The Democrats are heading for a good night on November 3, and DSA is about to send more members to Congress than ever before. But between January&#x27;s Speaker vote and the fight over a 2028 endorsement, Joseph Perez argues…</p><p class="meta"><span class="source">Cosmonaut</span><time datetime="2026-11-02T08:09:45+00:00">02 Nov 08:09</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="vijay-prashad" data-id="https://luciddialectics.substack.com/p/the-future-has-not-resigned"><a class="headline" href="https://luciddialectics.substack.com/p/the-future-has-not-resigned" target="_blank" rel="noopener noreferrer">The Future Has Not Resigned</a><p class="summary">A poem with a little red dust on our shoes (Lucid Dialectics no. 3)</p><p class="meta"><span class="source">Vijay Prashad</span><time datetime="2026-10-28T05:32:05+00:00">28 Oct 05:32</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="norman-finkelstein" data-id="https://normanfinkelstein.substack.com/p/norman-finkelstein-netanyahu-destroyed"><a class="headline" href="https://normanfinkelstein.substack.com/p/norman-finkelstein-netanyahu-destroyed" target="_blank" rel="noopener noreferrer">Norman Finkelstein: Netanyahu DESTROYED Global Order - With Trump&#x27;s Help</a><p class="meta"><span class="source">Norman Finkelstein</span><time datetime="2026-10-27T11:53:53+00:00">27 Oct 11:53</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="critique-of-crisis-theory" data-id="https://critiqueofcrisistheory.com/2026/10/26/diesel-world-war-and-the-rise-of-u-s-imperialism-1865-1918"><a class="headline" href="https://critiqueofcrisistheory.com/2026/10/26/diesel-world-war-and-the-rise-of-u-s-imperialism-1865-1918/" target="_blank" rel="noopener noreferrer">Diesel, world war and the rise of U.S. imperialism, 1865–1918</a><p class="summary">The trap of the two parties On October 17, more than 3,000 actions were held to mobilize people to vote, and vote early, in the upcoming November 3 elections. In a message sent to my email, the liberal-progressive…</p><p class="meta"><span class="source">Critique of Crisis Theory</span><time datetime="2026-10-26T12:49:39+00:00">26 Oct 12:49</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="aaron-mat" data-id="https://www.aaronmate.net/p/trump-is-right-zelensky-should-have"><a class="headline" href="https://www.aaronmate.net/p/trump-is-right-zelensky-should-have" target="_blank" rel="noopener noreferrer">Trump is right: Zelensky “should have settled this war a long time ago”</a><p class="summary">A newly revealed 2023 back channel adds to the list of Putin-endorsed peace deals Zelensky shunned, all while Washington insisted that Russia had no interest in “meaningful diplomacy.”</p><p class="meta"><span class="source">Aaron Maté</span><time datetime="2026-10-26T07:52:02+00:00">26 Oct 07:52</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="gabriel-rockhill" data-id="https://gabrielrockhill.substack.com/p/requiem-for-french-theory-transatlantic-843"><a class="headline" href="https://gabrielrockhill.substack.com/p/requiem-for-french-theory-transatlantic-843" target="_blank" rel="noopener noreferrer">Requiem for French Theory: Transatlantic Funeral Dirge in a Marxist Key</a><p class="summary">Rev Left Radio Interview</p><p class="meta"><span class="source">Gabriel Rockhill</span><time datetime="2026-10-22T12:33:08+00:00">22 Oct 12:33</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="vijay-prashad" data-id="https://luciddialectics.substack.com/p/those-who-carried"><a class="headline" href="https://luciddialectics.substack.com/p/those-who-carried" target="_blank" rel="noopener noreferrer">Those Who Carried</a><p class="summary">At the Jiangxi Soviet</p><p class="meta"><span class="source">Vijay Prashad</span><time datetime="2026-10-20T22:38:43+00:00">20 Oct 22:38</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="aaron-mat" data-id="https://www.aaronmate.net/p/has-trump-turned-on-ukraine"><a class="headline" href="https://www.aaronmate.net/p/has-trump-turned-on-ukraine" target="_blank" rel="noopener noreferrer">Has Trump turned on Ukraine?</a><p class="summary">Aaron Mate is a reader-supported publication.</p><p class="meta"><span class="source">Aaron Maté</span><time datetime="2026-10-20T08:48:02+00:00">20 Oct 08:48</time><button class="mark" type="button" title="Mark as read"></button></p></li><li class="item" data-source="norman-finkelstein" data-id="https://normanfinkelstein.substack.com/p/finkelstein-dr-cornel-west-richard"><a class="headline" href="https://normanfinkelstein.substack.com/p/finkelstein-dr-cornel-west-richard" target="_blank" rel="noopener noreferrer">Finkelstein, Dr. Cornel West, Richard Wolff, Robinson Erhardt</a><p class="summary">Full interview:</p><p class="meta"><span class="source">Norman Finkelstein</span><time datetime="2026-10-19T01:48:51+00:00">19 Oct 01:48</time><button class="mark" type="button" title="Mark as read"></button></p></li>
+  </ul>
+
+  <footer><p class="problems">Unavailable this run: CounterPunch (HTTP 403)</p></footer>
+</div>
+
+<script>
+  // Relative times are computed in the browser so a cached page never
+  // shows a stale "2 hours ago".
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  const UNITS = [["year",31536000],["month",2592000],["week",604800],
+                 ["day",86400],["hour",3600],["minute",60]];
+  for (const el of document.querySelectorAll("time[datetime]")) {
+    const secs = (Date.now() - new Date(el.dateTime)) / 1000;
+    const unit = UNITS.find(([, s]) => secs >= s);
+    const rel = unit ? rtf.format(-Math.floor(secs / unit[1]), unit[0]) : "just now";
+    el.title = el.textContent;
+    // Sources that publish no date get "first seen", not a claimed pub date.
+    if (el.dataset.undated) {
+      el.textContent = "first seen " + rel;
+      el.title = "This source publishes no date; " + el.title + " is when this link first appeared.";
+    } else {
+      el.textContent = rel;
+    }
+  }
+
+  const list = document.getElementById("list");
+  const items = [...list.querySelectorAll(".item")];
+  const sourceChips = [...document.querySelectorAll(".chip.src")];
+  const countEl = document.getElementById("shown");
+  const clearBtn = document.getElementById("clear");
+
+  // Two independent source filters: `focus` narrows to a single source,
+  // `excluded` hides several. Focus wins while it's set — combining them
+  // would let you focus a source and exclude it at the same time.
+  const unreadEl = document.getElementById("unread");
+  const unreadBtn = document.getElementById("unread-only");
+  const markAllBtn = document.getElementById("mark-all");
+
+  const saved = JSON.parse(localStorage.getItem("newsfeed-filters") || "{}");
+  let focus = saved.focus || null;
+  let unreadOnly = Boolean(saved.unreadOnly);
+  const excluded = new Set(saved.excluded || []);
+
+  // Read state is keyed by canonical link and kept separately, so clearing
+  // filters never clears what you've read. Each entry stores when it was
+  // marked, and old ones expire — pruning to "stories on the page right now"
+  // would wipe a source's history during a transient feed outage, and every
+  // one of its stories would come back unread.
+  const READ_TTL_DAYS = 180;
+  const raw = JSON.parse(localStorage.getItem("newsfeed-read") || "{}");
+  const horizon = Date.now() - READ_TTL_DAYS * 86400000;
+  const read = new Map(
+    Object.entries(Array.isArray(raw) ? {} : raw).filter(([, at]) => at > horizon));
+
+  function saveRead() {
+    localStorage.setItem("newsfeed-read", JSON.stringify(Object.fromEntries(read)));
+  }
+
+  // Stories marked read in this session stay on screen even under "unread
+  // only", so the list doesn't reshuffle under the cursor as you work down
+  // it. Not persisted: they're gone on the next load, which is the point.
+  const justRead = new Set();
+
+  function setRead(item, value) {
+    const id = item.dataset.id;
+    if (value) {
+      read.set(id, Date.now());
+      justRead.add(id);
+    } else {
+      read.delete(id);
+      justRead.delete(id);
+    }
+    saveRead();
+  }
+
+  saveRead();  // persist the expiry sweep even if nothing else happens
+
+  function apply() {
+    let shown = 0, unread = 0;
+    for (const item of items) {
+      const src = item.dataset.source;
+      const isRead = read.has(item.dataset.id);
+      const passesSource = focus ? src === focus : !excluded.has(src);
+      const ok = passesSource
+                 && (!unreadOnly || !isRead || justRead.has(item.dataset.id));
+
+      item.hidden = !ok;
+      item.classList.toggle("is-read", isRead);
+      const mark = item.querySelector(".mark");
+      mark.textContent = isRead ? "✓" : "";
+      mark.title = isRead ? "Mark as unread" : "Mark as read";
+      if (ok) shown++;
+      // Unread count tracks the source filter but ignores the unread toggle —
+      // otherwise turning "unread only" on would always report zero left.
+      if (passesSource && !isRead) unread++;
+    }
+
+    for (const c of sourceChips) {
+      const src = c.dataset.source;
+      c.classList.toggle("is-focus", focus === src);
+      c.classList.toggle("is-excluded", !focus && excluded.has(src));
+      c.classList.toggle("is-dimmed", Boolean(focus) && focus !== src);
+    }
+
+    unreadBtn.classList.toggle("is-active", unreadOnly);
+    markAllBtn.hidden = unread === 0;
+    // Only offer "all" when there's actually something to clear.
+    clearBtn.hidden = !focus && excluded.size === 0;
+    countEl.textContent = shown;
+    unreadEl.textContent = unread;
+    localStorage.setItem("newsfeed-filters",
+      JSON.stringify({ focus, excluded: [...excluded], unreadOnly }));
+  }
+
+  function toggleExclude(src) {
+    // Drop any focus — otherwise excluding the focused source would leave an
+    // empty page with no obvious way back.
+    focus = null;
+    if (excluded.has(src)) excluded.delete(src);
+    else excluded.add(src);
+  }
+
+  function toggleFocus(src) {
+    // Focusing is a fresh start: drop exclusions too, so no invisible state
+    // survives behind the focused view and surprises you later.
+    focus = focus === src ? null : src;
+    excluded.clear();
+  }
+
+  const sourcesNav = document.getElementById("sources");
+
+  sourcesNav.addEventListener("click", (ev) => {
+    const chip = ev.target.closest(".chip");
+    if (!chip) return;
+
+    // Swallow the click the browser fires after a long press.
+    if (longPressed) { longPressed = false; return; }
+
+    if (chip === clearBtn) {
+      focus = null;
+      excluded.clear();
+    } else if (chip.dataset.source) {
+      if (ev.shiftKey) toggleExclude(chip.dataset.source);
+      else toggleFocus(chip.dataset.source);
+    }
+    apply();
+  });
+
+  // Touch has no shift key, so a long press is the mobile equivalent of
+  // shift-click. Restricted to touch and pen: on a mouse it would mean a
+  // slow click silently excluded a source instead of focusing it.
+  const LONG_PRESS_MS = 450;
+  const MOVE_TOLERANCE = 12;   // px; a resting finger is never perfectly still
+  let pressTimer = null;
+  let longPressed = false;
+  let pressChip = null;
+  let pressX = 0, pressY = 0;
+
+  function cancelPress() {
+    if (pressTimer !== null) { clearTimeout(pressTimer); pressTimer = null; }
+    if (pressChip) { pressChip.classList.toggle("is-pressing", false); pressChip = null; }
+  }
+
+  sourcesNav.addEventListener("pointerdown", (ev) => {
+    // Anything that isn't a mouse. Some browsers report an empty pointerType,
+    // and treating those as touch is the safer failure.
+    if (ev.pointerType === "mouse") return;
+    const chip = ev.target.closest(".chip.src");
+    if (!chip) return;
+
+    longPressed = false;
+    cancelPress();
+    pressChip = chip;
+    pressX = ev.clientX || 0;
+    pressY = ev.clientY || 0;
+    chip.classList.toggle("is-pressing", true);
+
+    // Keep receiving events for this pointer even if the finger drifts off
+    // the chip, and stop the browser retargeting them elsewhere.
+    if (chip.setPointerCapture && ev.pointerId !== undefined) {
+      try { chip.setPointerCapture(ev.pointerId); } catch (e) { /* not fatal */ }
+    }
+
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      longPressed = true;          // tells the click handler to stand down
+      if (pressChip) pressChip.classList.toggle("is-pressing", false);
+      pressChip = null;
+      toggleExclude(chip.dataset.source);
+      apply();
+    }, LONG_PRESS_MS);
+  });
+
+  // Only a real drag cancels. Cancelling on any pointermove at all meant the
+  // press never survived the tiny jitter of a finger resting on the glass.
+  sourcesNav.addEventListener("pointermove", (ev) => {
+    if (pressTimer === null) return;
+    const dx = (ev.clientX || 0) - pressX;
+    const dy = (ev.clientY || 0) - pressY;
+    if (Math.hypot(dx, dy) > MOVE_TOLERANCE) cancelPress();
+  });
+
+  // Deliberately not pointerleave: setting pointer capture can itself fire
+  // leave events on the old target chain, which would cancel instantly.
+  for (const evt of ["pointerup", "pointercancel"]) {
+    sourcesNav.addEventListener(evt, cancelPress);
+  }
+
+  // Stop iOS/Android offering their own copy-and-select menu on a long press.
+  sourcesNav.addEventListener("contextmenu", (ev) => {
+    if (ev.target.closest(".chip.src")) ev.preventDefault();
+  });
+
+  // Load the page with #debug to see which pointer events actually fire on a
+  // phone. Touch behaviour can't be reproduced in the test harness, so this
+  // is the only way to diagnose it without guessing.
+  if (typeof location !== "undefined" && location.hash.indexOf("debug") !== -1) {
+    const panel = document.createElement("div");
+    panel.style.cssText = "position:fixed;bottom:0;left:0;right:0;max-height:45vh;"
+      + "overflow:auto;background:#000;color:#4f4;font:11px/1.4 monospace;"
+      + "padding:.5rem;z-index:9999;white-space:pre-wrap";
+    document.body.appendChild(panel);
+
+    let n = 0;
+    const t0 = Date.now();
+    const say = (m) => {
+      panel.textContent = (++n) + " +" + (Date.now() - t0) + "ms  " + m
+        + "\n" + panel.textContent.slice(0, 3000);
+    };
+    say("debug on — press and hold a source chip");
+
+    for (const t of ["pointerdown", "pointerup", "pointercancel", "pointerleave",
+                     "contextmenu", "click", "touchstart", "touchend", "touchcancel"]) {
+      sourcesNav.addEventListener(t, (ev) => {
+        const c = ev.target && ev.target.className ? String(ev.target.className) : "-";
+        say(t + "  pointerType=" + (ev.pointerType || "-") + "  target=" + c);
+      }, true);
+    }
+  }
+
+  // Opening a story marks it read; the ✓ button toggles without opening.
+  list.addEventListener("click", (ev) => {
+    const item = ev.target.closest(".item");
+    if (!item) return;
+
+    if (ev.target.closest(".mark")) {
+      setRead(item, !read.has(item.dataset.id));
+      apply();
+    } else if (ev.target.closest(".headline")) {
+      setRead(item, true);
+      apply();
+    }
+  });
+
+  unreadBtn.addEventListener("click", () => {
+    unreadOnly = !unreadOnly;
+    apply();
+  });
+
+  markAllBtn.addEventListener("click", () => {
+    // Only what's currently visible, so it respects the source filter and
+    // can't silently bury stories you've filtered out of sight. Unlike a
+    // single mark, this clears the view — emptying the queue is the point.
+    for (const item of items) if (!item.hidden) read.set(item.dataset.id, Date.now());
+    justRead.clear();
+    saveRead();
+    apply();
+  });
+
+  apply();
+</script>
+</body>
+</html>
